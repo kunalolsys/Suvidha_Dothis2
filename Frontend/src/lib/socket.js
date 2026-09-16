@@ -4,7 +4,7 @@ import api from "./api.js"; // Reuse axios config (baseURL, cookies)
 // Socket base URL (match backend server)
 const SOCKET_URL =
   import.meta.env.VITE_API_BASE_URL?.replace("/api/v1", "") ||
-  "https://backend.tms.himaira.com";
+  "https://suvidhav2.dothis2.com";
 
 let socket = null;
 

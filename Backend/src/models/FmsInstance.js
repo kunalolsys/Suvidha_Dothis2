@@ -41,12 +41,12 @@ const FmsInstanceSchema = new mongoose.Schema(
       rate: { type: Number, default: 0 },
       lastUpdated: Date,
     },
-    manager: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-    },
-    srManager: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    // manager: {
+    //   type: mongoose.Schema.Types.ObjectId,
+    //   ref: "User",
+    //   required: true,
+    // },
+    // srManager: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",

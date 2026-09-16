@@ -256,11 +256,11 @@ const Sidebar = ({ children }) => {
     const name = user.role.name.trim().toLowerCase();
 
     if (name.includes("super")) return "Super Admin";
-    if (name.includes("sr._manager")) return "Sr. Manager View";
-    if (name.includes("manager")) return "Manager View";
-    if (name.includes("owner")) return "Owner View";
+    // if (name.includes("sr._manager")) return "Sr. Manager View";
+    // if (name.includes("manager")) return "Manager View";
+    // if (name.includes("owner")) return "Owner View";
     if (name.includes("admin")) return "Admin View";
-    if (name.includes("pc")) return "PC View";
+    // if (name.includes("pc")) return "PC View";
     return "";
   }, [user]);
 

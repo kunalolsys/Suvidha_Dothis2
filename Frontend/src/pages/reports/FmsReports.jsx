@@ -73,9 +73,21 @@ const STATUS_META = {
   Overdue: { color: TOKEN.red, bg: TOKEN.redGlow, label: "Overdue" },
   Pending: { color: TOKEN.amber, bg: TOKEN.amberGlow, label: "Pending" },
   Completed: { color: TOKEN.green, bg: TOKEN.greenGlow, label: "Completed" },
-  "In Progress": { color: TOKEN.accent, bg: "rgba(37,99,235,0.12)", label: "In Progress" },
-  Ongoing: { color: TOKEN.accent, bg: "rgba(37,99,235,0.12)", label: "Ongoing" },
-  Stopped: { color: TOKEN.muted, bg: "rgba(100,116,139,0.12)", label: "Stopped" },
+  "In Progress": {
+    color: TOKEN.accent,
+    bg: "rgba(37,99,235,0.12)",
+    label: "In Progress",
+  },
+  Ongoing: {
+    color: TOKEN.accent,
+    bg: "rgba(37,99,235,0.12)",
+    label: "Ongoing",
+  },
+  Stopped: {
+    color: TOKEN.muted,
+    bg: "rgba(100,116,139,0.12)",
+    label: "Stopped",
+  },
   "Not Done": { color: TOKEN.red, bg: TOKEN.redGlow, label: "Not Done" },
 };
 
@@ -461,7 +473,10 @@ const FmsReports = () => {
 
     // Aggregate global overdue, completed, and pending counts from templateStats
     const overdue = stats.reduce((acc, curr) => acc + (curr.overdue || 0), 0);
-    const completed = stats.reduce((acc, curr) => acc + (curr.completed || 0), 0);
+    const completed = stats.reduce(
+      (acc, curr) => acc + (curr.completed || 0),
+      0,
+    );
     const pending = stats.reduce((acc, curr) => acc + (curr.pending || 0), 0);
 
     const ongoingInstances = [
@@ -648,7 +663,7 @@ const FmsReports = () => {
                 .filter((item) => item.role?.name !== "Owner")
                 .map((u) => ({
                   value: u._id,
-                  label: `${u.name || u.email} (${u.role?.name || "No Role"})`,
+                  label: `${u.name || u.email}`,
                 })),
             ]}
           />
@@ -1342,22 +1357,16 @@ const FmsReports = () => {
                             i === 0 ? "rgba(245,158,11,0.06)" : "#F8FAFC",
                           borderRadius: "12px",
                           border: `1px solid ${
-                            i === 0
-                              ? "rgba(217,119,6,0.25)"
-                              : TOKEN.border
+                            i === 0 ? "rgba(217,119,6,0.25)" : TOKEN.border
                           }`,
                         }}
                       >
                         <RankBadge rank={i + 1} />
                         <div style={{ flex: 1 }}>
-                          <div
-                            style={{ fontWeight: 600, fontSize: "14px" }}
-                          >
+                          <div style={{ fontWeight: 600, fontSize: "14px" }}>
                             {p.userName}
                           </div>
-                          <div
-                            style={{ fontSize: "11px", color: TOKEN.muted }}
-                          >
+                          <div style={{ fontSize: "11px", color: TOKEN.muted }}>
                             {p.role} · {p.totalTasks} tasks
                           </div>
                           <div style={{ marginTop: "6px" }}>
@@ -1367,8 +1376,8 @@ const FmsReports = () => {
                                 p.score >= 80
                                   ? TOKEN.green
                                   : p.score >= 50
-                                  ? TOKEN.amber
-                                  : TOKEN.red
+                                    ? TOKEN.amber
+                                    : TOKEN.red
                               }
                             />
                           </div>
@@ -1382,15 +1391,13 @@ const FmsReports = () => {
                                 p.score >= 80
                                   ? TOKEN.green
                                   : p.score >= 50
-                                  ? TOKEN.amber
-                                  : TOKEN.red,
+                                    ? TOKEN.amber
+                                    : TOKEN.red,
                             }}
                           >
                             {p.score}%
                           </div>
-                          <div
-                            style={{ fontSize: "10px", color: TOKEN.muted }}
-                          >
+                          <div style={{ fontSize: "10px", color: TOKEN.muted }}>
                             score
                           </div>
                         </div>
@@ -1519,9 +1526,7 @@ const FmsReports = () => {
                         </div>
                         <Icon size={14} color={color} />
                       </div>
-                      <div
-                        style={{ fontSize: "28px", fontWeight: 800, color }}
-                      >
+                      <div style={{ fontSize: "28px", fontWeight: 800, color }}>
                         {value}
                       </div>
                     </div>
@@ -1627,26 +1632,17 @@ const FmsReports = () => {
                             {ts.assigned} assigned
                           </span>
                           <span
-                            style={S.badge(
-                              TOKEN.green,
-                              "rgba(16,185,129,0.1)",
-                            )}
+                            style={S.badge(TOKEN.green, "rgba(16,185,129,0.1)")}
                           >
                             {ts.completed} done
                           </span>
                           <span
-                            style={S.badge(
-                              TOKEN.red,
-                              "rgba(239,68,68,0.1)",
-                            )}
+                            style={S.badge(TOKEN.red, "rgba(239,68,68,0.1)")}
                           >
                             {ts.overdue || 0} overdue
                           </span>
                           <span
-                            style={S.badge(
-                              TOKEN.amber,
-                              "rgba(245,158,11,0.1)",
-                            )}
+                            style={S.badge(TOKEN.amber, "rgba(245,158,11,0.1)")}
                           >
                             {ts.pending || 0} pending
                           </span>

@@ -43,7 +43,7 @@ export const taskBucketAssignedTemplate = ({
               font-weight:700;
               margin-bottom:10px;
             ">
-              Dothis2
+              Suvidha Dothis2
             </div>
 
             <h1 style="
@@ -246,12 +246,12 @@ export const taskBucketAssignedTemplate = ({
           ">
 
             This is an automated notification from the
-            <strong>Dothis2</strong>.
+            <strong>Suvidha Dothis2</strong>.
 
             <br /><br />
 
             Regards,<br />
-            <strong>Dothis2</strong>
+            <strong>Suvidha Dothis2</strong>
 
           </div>
 

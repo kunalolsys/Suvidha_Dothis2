@@ -38,7 +38,7 @@ export const bucketCompletedTemplate = ({
               font-weight:600;
               margin-bottom:8px;
             ">
-              Dothis2
+              Suvidha Dothis2
             </div>
 
             <h1 style="
@@ -225,12 +225,12 @@ export const bucketCompletedTemplate = ({
             line-height:1.7;
           ">
             This is an automated notification from the
-            <strong>Dothis2</strong>.
+            <strong>Suvidha Dothis2</strong>.
 
             <br /><br />
 
             Regards,<br />
-            <strong>Dothis2</strong>
+            <strong>Suvidha Dothis2</strong>
           </div>
 
         </div>

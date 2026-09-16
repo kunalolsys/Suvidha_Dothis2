@@ -10,7 +10,7 @@ import { createLog } from "./logController.js";
 export const createFmsTasks = handleAsync(async (req, res, next) => {
   const { id: templateId } = req.params;
   let rows = Array.isArray(req.body) ? req.body : [req.body];
-  const template = await FmsTemplate.findById(templateId).populate("manager");
+  const template = await FmsTemplate.findById(templateId);
   if (!template) return next(new AppError("Template not found", 404));
 
   const created = [];

@@ -99,16 +99,16 @@ const FmsTemplates = () => {
         templateName: "Marketing Campaign 2025",
         description: "Annual marketing template for Q1-Q4",
         fmsDuration: "Timeless",
-        manager: "Manager Name",
-        srManager: "Sr. Manager Name",
+        // manager: "Manager Name",
+        // srManager: "Sr. Manager Name",
         endDate: "",
       },
       {
         templateName: "Q1 Sales Drive",
         description: "Sales push for January-March",
         fmsDuration: "Fixed Period",
-        manager: "Manager Name",
-        srManager: "",
+        // manager: "Manager Name",
+        // srManager: "",
         endDate: "2025-03-31",
       },
     ];
@@ -118,8 +118,8 @@ const FmsTemplates = () => {
       "templateName",
       "description",
       "fmsDuration",
-      "manager",
-      "srManager",
+      // "manager",
+      // "srManager",
       "endDate",
     ];
 
@@ -236,8 +236,8 @@ const FmsTemplates = () => {
           templateName: row.templateName || "",
           description: row.description || "",
           fmsDuration: row.fmsDuration || "",
-          manager: row.manager || "",
-          srManager: row.srManager || "",
+          // manager: row.manager || "",
+          // srManager: row.srManager || "",
           endDate: row.endDate || "",
         }));
 

@@ -13,6 +13,10 @@ const getDestination = (file) => {
     case "profilePhoto":
       return "uploads/users/profiles";
 
+    case "file": // 🚀 CSV & Bulk Import Files
+    case "csv":
+      return "uploads/csv";
+
     default:
       return "uploads/misc";
   }
@@ -22,7 +26,7 @@ const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const dir = getDestination(file);
 
-    // auto create folder if not exists
+    // Auto-create directory if it doesn't exist
     fs.mkdirSync(dir, { recursive: true });
 
     cb(null, dir);
@@ -39,16 +43,28 @@ const storage = multer.diskStorage({
 
 const fileFilter = (req, file, cb) => {
   const allowed = [
+    // Image Mimetypes
     "image/png",
     "image/jpeg",
     "image/jpg",
     "image/webp",
     "image/svg+xml",
     "image/x-icon",
+    "image/vnd.microsoft.icon",
+
+    // 🚀 CSV Mimetypes (Added for User Bulk Import)
+    "text/csv",
+    "application/vnd.ms-excel",
+    "text/plain",
+    "text/x-csv",
+    "application/csv",
   ];
 
   if (!allowed.includes(file.mimetype)) {
-    return cb(new Error("Invalid file type"), false);
+    return cb(
+      new Error("Invalid file type. Allowed: Images and CSV files."),
+      false,
+    );
   }
 
   cb(null, true);
@@ -58,7 +74,7 @@ const upload = multer({
   storage,
   fileFilter,
   limits: {
-    fileSize: 5 * 1024 * 1024,
+    fileSize: 10 * 1024 * 1024, // 🟢 Increased to 10MB to handle large CSV imports
   },
 });
 

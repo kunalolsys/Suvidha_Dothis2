@@ -54,6 +54,27 @@ export const addUser = createAsyncThunk(
     }
   },
 );
+export const importUsers = createAsyncThunk(
+  "users/importUsers",
+  async (file, { rejectWithValue }) => {
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await api.post("/setup/users/import", formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      });
+
+      return response.data; // Expects { status, message, data: { validCount, errorCount, errorRows } }
+    } catch (error) {
+      return rejectWithValue(
+        error.response?.data?.message || "Failed to import users",
+      );
+    }
+  },
+);
 export const getUserForDrop = createAsyncThunk(
   "users/getAllUserForDrop",
   async (params = {}, { rejectWithValue }) => {

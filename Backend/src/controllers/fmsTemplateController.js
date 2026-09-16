@@ -18,8 +18,8 @@ export const createTemplate = handleAsync(async (req, res, next) => {
     description,
     fmsDuration,
     endDate,
-    manager,
-    srManager,
+    // manager,
+    // srManager,
   } = req.body;
   const userId = req.cookies.userId || req.user._id || null;
 
@@ -33,18 +33,18 @@ export const createTemplate = handleAsync(async (req, res, next) => {
   }
 
   // Role validation (BRD)
-  const managerUser = await User.findById(manager)
-    .populate("role")
-    .populate("assignShift");
-  if (!managerUser || managerUser.role.name !== "manager") {
-    return next(new AppError("Manager must have Manager role", 400));
-  }
-  if (srManager) {
-    const srUser = await User.findById(srManager).populate("role");
-    if (!srUser || srUser.role.name !== "sr._manager") {
-      return next(new AppError("Sr Manager must have Sr Manager role", 400));
-    }
-  }
+  // const managerUser = await User.findById(manager)
+  //   .populate("role")
+  //   .populate("assignShift");
+  // if (!managerUser || managerUser.role.name !== "manager") {
+  //   return next(new AppError("Manager must have Manager role", 400));
+  // }
+  // if (srManager) {
+  //   const srUser = await User.findById(srManager).populate("role");
+  //   if (!srUser || srUser.role.name !== "sr._manager") {
+  //     return next(new AppError("Sr Manager must have Sr Manager role", 400));
+  //   }
+  // }
   let templateEndDate = endDate;
 
   if (fmsDuration === "Fixed Period" && endDate && managerUser.assignShift) {
@@ -59,14 +59,14 @@ export const createTemplate = handleAsync(async (req, res, next) => {
     description: description || "",
     fmsDuration,
     endDate: fmsDuration === "Fixed Period" ? templateEndDate : undefined,
-    manager: managerUser._id,
-    srManager: srManager || undefined,
+    // manager: managerUser._id,
+    // srManager: srManager || undefined,
     user: userId,
   });
 
   await template.populate([
-    "manager",
-    "srManager",
+    // "manager",
+    // "srManager",
     "taskCount",
     "instanceCount",
   ]);
@@ -103,56 +103,56 @@ export const importFmsTemplates = handleAsync(async (req, res, next) => {
         description = "",
         fmsDuration,
         endDate,
-        manager: managerName,
-        srManager: srManagerName,
+        // manager: managerName,
+        // srManager: srManagerName,
       } = data;
 
       // Validate required
-      if (!templateName || !fmsDuration || !managerName) {
+      if (!templateName || !fmsDuration) {
         errors.push({ templateName, error: "Missing required fields" });
         continue;
       }
 
       // Check Manager role
       // 🔥 Find manager by name
-      const managerUser = await User.findOne({
-        name: managerName,
-        isDeleted: false,
-      }).populate("role");
+      // const managerUser = await User.findOne({
+      //   name: managerName,
+      //   isDeleted: false,
+      // }).populate("role");
 
-      if (!managerUser) {
-        errors.push({ templateName, error: "Manager not found" });
-        continue;
-      }
+      // if (!managerUser) {
+      //   errors.push({ templateName, error: "Manager not found" });
+      //   continue;
+      // }
 
-      // 🔥 Validate role
-      if (managerUser.role?.name !== "manager") {
-        errors.push({ templateName, error: "Manager must have Manager role" });
-        continue;
-      }
+      // // 🔥 Validate role
+      // if (managerUser.role?.name !== "manager") {
+      //   errors.push({ templateName, error: "Manager must have Manager role" });
+      //   continue;
+      // }
 
       // 🔥 Find srManager if provided
-      let srUser = null;
+      // let srUser = null;
 
-      if (srManagerName) {
-        srUser = await User.findOne({
-          name: srManagerName,
-          isDeleted: false,
-        }).populate("role");
+      // if (srManagerName) {
+      //   srUser = await User.findOne({
+      //     name: srManagerName,
+      //     isDeleted: false,
+      //   }).populate("role");
 
-        if (!srUser) {
-          errors.push({ templateName, error: "Sr Manager not found" });
-          continue;
-        }
+      //   if (!srUser) {
+      //     errors.push({ templateName, error: "Sr Manager not found" });
+      //     continue;
+      //   }
 
-        if (srUser.role?.name !== "sr._manager") {
-          errors.push({
-            templateName,
-            error: "Sr Manager must have Sr Manager role",
-          });
-          continue;
-        }
-      }
+      //   if (srUser.role?.name !== "sr._manager") {
+      //     errors.push({
+      //       templateName,
+      //       error: "Sr Manager must have Sr Manager role",
+      //     });
+      //     continue;
+      //   }
+      // }
 
       // Check duplicate
       const existing = await FmsTemplate.findOne({
@@ -191,12 +191,12 @@ export const importFmsTemplates = handleAsync(async (req, res, next) => {
         description,
         fmsDuration,
         endDate: fmsDuration === "Fixed Period" ? parsedEndDate : undefined,
-        manager: managerUser._id,
-        srManager: srUser?._id,
+        // manager: managerUser._id,
+        // srManager: srUser?._id,
         user: userId,
       });
 
-      await template.populate(["manager", "srManager"]);
+      // await template;
       createdTemplates.push(template);
     } catch (err) {
       errors.push({ templateName: data.templateName, error: err.message });
@@ -280,7 +280,7 @@ export const getTemplates = handleAsync(async (req, res) => {
   // =========================
   const [templates, total, linkedForms] = await Promise.all([
     FmsTemplate.find(filter)
-      .populate("manager srManager user", "name email")
+      // .populate("manager srManager user", "name email")
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit))
@@ -380,8 +380,8 @@ export const getTemplatesForDropdown = handleAsync(async (req, res) => {
     .select(
       "_id templateName fmsId description fmsDuration endDate isLaunched isDraft status",
     )
-    .populate("manager", "name email")
-    .populate("srManager", "name email")
+    // .populate("manager", "name email")
+    // .populate("srManager", "name email")
     .sort({ createdAt: -1 })
     .lean();
 
@@ -395,8 +395,8 @@ export const getTemplatesForDropdown = handleAsync(async (req, res) => {
 export const getAllTemplates = handleAsync(async (req, res) => {
   const templates = await FmsTemplate.find({ isDeleted: false })
     .select("_id templateName fmsId description fmsDuration endDate isLaunched")
-    .populate("manager", "name email")
-    .populate("srManager", "name email")
+    // .populate("manager", "name email")
+    // .populate("srManager", "name email")
     .sort({ templateName: 1 }); // Sorted alphabetically by name for dropdowns
 
   res.status(200).json({
@@ -406,8 +406,8 @@ export const getAllTemplates = handleAsync(async (req, res) => {
 });
 export const getTemplateById = handleAsync(async (req, res, next) => {
   const template = await FmsTemplate.findById(req.params.id)
-    .populate("manager", "name email")
-    .populate("srManager", "name email")
+    // .populate("manager", "name email")
+    // .populate("srManager", "name email")
     .populate({
       path: "tasks",
       populate: [
@@ -466,27 +466,27 @@ export const updateTemplate = handleAsync(async (req, res, next) => {
   }
 
   // Role validation if changed
-  if (updateData.manager) {
-    const managerUser = await User.findById(updateData.manager).populate(
-      "role",
-    );
-    if (!managerUser || managerUser.role.name !== "manager") {
-      return next(new AppError("Manager must have Manager role", 400));
-    }
-  }
-  if (updateData.srManager) {
-    const srUser = await User.findById(updateData.srManager).populate("role");
-    if (!srUser || srUser.role.name !== "sr._manager") {
-      return next(new AppError("Sr Manager must have Sr Manager role", 400));
-    }
-  }
+  // if (updateData.manager) {
+  //   const managerUser = await User.findById(updateData.manager).populate(
+  //     "role",
+  //   );
+  //   if (!managerUser || managerUser.role.name !== "manager") {
+  //     return next(new AppError("Manager must have Manager role", 400));
+  //   }
+  // }
+  // if (updateData.srManager) {
+  //   const srUser = await User.findById(updateData.srManager).populate("role");
+  //   if (!srUser || srUser.role.name !== "sr._manager") {
+  //     return next(new AppError("Sr Manager must have Sr Manager role", 400));
+  //   }
+  // }
 
   Object.assign(template, updateData);
   await template.save();
 
   await template.populate([
-    "manager",
-    "srManager",
+    // "manager",
+    // "srManager",
     "taskCount",
     "instanceCount",
   ]);
@@ -622,8 +622,8 @@ export const getTemplateTasks = handleAsync(async (req, res) => {
 export const exportTemplate = handleAsync(async (req, res, next) => {
   try {
     const templates = await FmsTemplate.find({ isDeleted: false })
-      .populate("manager", "name email")
-      .populate("srManager", "name email")
+      // .populate("manager", "name email")
+      // .populate("srManager", "name email")
       .sort({ createdAt: -1 })
       .lean();
 
@@ -631,8 +631,8 @@ export const exportTemplate = handleAsync(async (req, res, next) => {
       ID: temp.fmsId,
       "Template Name": temp.templateName,
       Description: temp.description || "",
-      Manager: temp.manager.name || "",
-      "Sr Manager": temp.srManager.name || "",
+      // Manager: temp.manager.name || "",
+      // "Sr Manager": temp.srManager.name || "",
       "Created At": temp.createdAt
         ? new Date(temp.createdAt)
             .toLocaleDateString("en-GB")

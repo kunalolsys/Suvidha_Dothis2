@@ -30,21 +30,21 @@ const FmsTemplateSchema = new mongoose.Schema(
       required: true,
     },
     endDate: Date,
-    manager: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-      index: true,
-    },
+    // manager: {
+    //   type: mongoose.Schema.Types.ObjectId,
+    //   ref: "User",
+    //   required: true,
+    //   index: true,
+    // },
     user: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
     },
-    srManager: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      index: true,
-    },
+    // srManager: {
+    //   type: mongoose.Schema.Types.ObjectId,
+    //   ref: "User",
+    //   index: true,
+    // },
     isLaunched: {
       type: Boolean,
       default: false,
@@ -71,7 +71,7 @@ const FmsTemplateSchema = new mongoose.Schema(
 
 // Indexes for performance
 FmsTemplateSchema.index({ fmsId: 1 });
-FmsTemplateSchema.index({ manager: 1 });
+// FmsTemplateSchema.index({ manager: 1 });
 // FmsTemplateSchema.index({ templateName: 1 }); // Explicit for queries
 FmsTemplateSchema.index(
   { templateName: 1 },

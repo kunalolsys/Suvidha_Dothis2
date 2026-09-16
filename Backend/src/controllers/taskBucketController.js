@@ -17,7 +17,11 @@ import sendEmail from "../services/emailService.js";
 import { bucketCompletedTemplate } from "../services/templates/bucketCompletedTemplate.js";
 import { taskBucketAssignedTemplate } from "../services/templates/taskBucketAssignedTemp.js";
 import { sendNotification } from "../services/telegram/services/taskTelegramService.js";
-import { calculateCalendarDurationWithShiftSnap,parseFrequencyToHours } from "../utils/fmsDateCalculator.js";
+import {
+  calculateCalendarDurationWithShiftSnap,
+  parseFrequencyToHours,
+} from "../utils/fmsDateCalculator.js";
+import Role from "../models/Role.js";
 
 // =======================================================
 // CREATE BUCKET TASK
@@ -693,10 +697,11 @@ export const distributeTaskBucket = async (req, res) => {
     }
 
     // =====================================================
-    // GET USERS
+    // GET USERS (FETCH ALL SELECTED NON-DELETED USERS)
     // =====================================================
     const users = await User.find({
       _id: { $in: targetUserIds },
+      isDeleted: { $ne: true },
     });
 
     if (!users.length) {
@@ -706,19 +711,8 @@ export const distributeTaskBucket = async (req, res) => {
       });
     }
 
-    // =====================================================
-    // VALID USERS (ONLY REPORTING CHECK)
-    // =====================================================
-    const validUsers = users.filter(
-      (u) => String(u.reportingManager) === String(userId)
-    );
-
-    if (!validUsers.length) {
-      return res.status(400).json({
-        success: false,
-        message: "No valid reporting users",
-      });
-    }
+    // 🟢 REPORTING MANAGER CHECK REMOVED: All fetched users are valid
+    const validUsers = users;
 
     // =====================================================
     // DUPLICATE CHECK
@@ -744,7 +738,7 @@ export const distributeTaskBucket = async (req, res) => {
     // FILTER ONLY NEW USERS
     // =====================================================
     const usersToAssign = validUsers.filter(
-      (u) => !assignedSet.has(String(u._id))
+      (u) => !assignedSet.has(String(u._id)),
     );
 
     if (!usersToAssign.length) {
@@ -761,7 +755,9 @@ export const distributeTaskBucket = async (req, res) => {
     const createdTasks = [];
 
     for (const user of usersToAssign) {
-      const assignedUser = await User.findById(user._id).populate("assignShift");
+      const assignedUser = await User.findById(user._id).populate(
+        "assignShift",
+      );
 
       if (!assignedUser?.assignShift) {
         return res.status(400).json({
@@ -794,10 +790,7 @@ export const distributeTaskBucket = async (req, res) => {
         ? new Date(bucket.startDate)
         : new Date();
 
-      if (
-        baseStartDate.getHours() === 0 &&
-        baseStartDate.getMinutes() === 0
-      ) {
+      if (baseStartDate.getHours() === 0 && baseStartDate.getMinutes() === 0) {
         baseStartDate = snapToShiftTime(baseStartDate, workShift, true);
       }
 
@@ -815,7 +808,7 @@ export const distributeTaskBucket = async (req, res) => {
           nextDay,
           workShift._id,
           {},
-          deptId
+          deptId,
         );
 
         baseStartDate = snapToShiftTime(nextWorkingShift, workShift, true);
@@ -829,16 +822,21 @@ export const distributeTaskBucket = async (req, res) => {
       let effectiveDueDate = null;
 
       if (bucket.taskEndDays && bucket.taskEndDays > 0) {
-        const endDaysParsed = { isDay: true, value: Number(bucket.taskEndDays) };
+        const endDaysParsed = {
+          isDay: true,
+          value: Number(bucket.taskEndDays),
+        };
         effectiveDueDate = await calculateCalendarDurationWithShiftSnap(
           effectiveStartDate,
           endDaysParsed,
           workShift._id,
-          deptId
+          deptId,
         );
 
         if (bucket.taskEndTime) {
-          const [hours, minutes] = String(bucket.taskEndTime).split(":").map(Number);
+          const [hours, minutes] = String(bucket.taskEndTime)
+            .split(":")
+            .map(Number);
           if (Number.isFinite(hours) && Number.isFinite(minutes)) {
             effectiveDueDate.setHours(hours, minutes, 0, 0);
           }
@@ -996,22 +994,31 @@ export const distributeTaskBucket = async (req, res) => {
     bucket.generatedTasks.push(...createdTasks);
 
     // =====================================================
-    // CHECK DISTRIBUTION STATUS
+    // CHECK DISTRIBUTION STATUS ACROSS ALL NON-DELETED USERS
     // =====================================================
-    const reportingUsers = await User.find({
-      reportingManager: userId,
+    let filter = {
+      isDeleted: { $ne: true },
+    };
+
+    const superRole = await Role.findOne({
+      name: { $regex: /^super$/i },
     }).select("_id");
 
-    const reportingUserIds = reportingUsers.map((u) => String(u._id));
+    if (superRole) {
+      filter.role = { $ne: superRole._id };
+    }
+
+    const allAssignableUsers = await User.find(filter).select("_id");
+    const allUserIds = allAssignableUsers.map((u) => String(u._id));
 
     const [delegationDistributed, recurringDistributed] = await Promise.all([
       DelegationTask.find({
         bucketId: bucket._id,
-        assignedTo: { $in: reportingUserIds },
+        assignedTo: { $in: allUserIds },
       }).select("assignedTo"),
       RecurringTask.find({
         bucketId: bucket._id,
-        assignedTo: { $in: reportingUserIds },
+        assignedTo: { $in: allUserIds },
       }).select("assignedTo"),
     ]);
 
@@ -1020,7 +1027,7 @@ export const distributeTaskBucket = async (req, res) => {
       ...recurringDistributed.map((t) => String(t.assignedTo)),
     ]);
 
-    const totalUsers = reportingUserIds.length;
+    const totalUsers = allUserIds.length;
     const distributedCount = distributedUserSet.size;
 
     // =====================================================
@@ -1149,13 +1156,26 @@ export const deleteTaskBucket = async (req, res) => {
 // =====================================================
 export const getBucketReportingUsers = async (req, res) => {
   try {
-    const managerId = req.cookies.userId || req.user._id;
     const { id } = req.params;
     const bucket = await TaskBucket.findById(id);
-    const users = await User.find({
-      reportingManager: managerId,
-    })
-      .populate("role", "name")
+
+    // =====================================================
+    // 1. FETCH ALL NON-DELETED USERS (EXCLUDING SUPER ROLE)
+    // =====================================================
+    let filter = {
+      isDeleted: { $ne: true },
+    };
+
+    const superRole = await Role.findOne({
+      name: { $regex: /^super$/i },
+    }).select("_id");
+
+    if (superRole) {
+      filter.role = { $ne: superRole._id };
+    }
+
+    const users = await User.find(filter)
+      .populate("role", "name displayName")
       .populate("reportingManager", "name")
       .populate("department", "name")
       .select("name email role reportingManager");
@@ -1175,8 +1195,6 @@ export const getBucketReportingUsers = async (req, res) => {
 
     for (const task of tasks) {
       const userId = String(task.assignedTo);
-      // if multiple bucket tasks exist,
-      // keep latest completed info
       if (!bucketTaskMap.has(userId)) {
         bucketTaskMap.set(userId, {
           hasBucketTask: true,
@@ -1185,15 +1203,15 @@ export const getBucketReportingUsers = async (req, res) => {
         });
       }
     }
+
     // =====================================================
-    // 3. ATTACH ONLY ONE FIELD TO USER
+    // 3. ATTACH TASK FLAGS TO USERS
     // =====================================================
     const result = users.map((user) => {
       const obj = user.toObject();
       const taskInfo = bucketTaskMap.get(String(user._id));
-      obj.hasBucketTask = bucketTaskMap.has(String(user._id)) ? true : false;
+      obj.hasBucketTask = bucketTaskMap.has(String(user._id));
       obj.completedStatus = taskInfo ? taskInfo.completedStatus : "No Task";
-
       obj.completedAt = taskInfo ? taskInfo.completedAt : null;
 
       return obj;
@@ -1206,14 +1224,14 @@ export const getBucketReportingUsers = async (req, res) => {
       success: true,
       count: result.length,
       data: result,
-      isBucketComplete: bucket.status == "Completed" || false,
+      isBucketComplete: bucket?.status === "Completed" || false,
     });
   } catch (err) {
     console.error(err);
 
     return res.status(500).json({
       success: false,
-      message: err.message || "Failed to fetch reporting users",
+      message: err.message || "Failed to fetch bucket users",
     });
   }
 };

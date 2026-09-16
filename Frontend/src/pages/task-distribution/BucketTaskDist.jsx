@@ -131,7 +131,7 @@ const TaskDistribution = () => {
       userId: u._id,
       userName: u.name,
       email: u.email,
-      role: u.role?.name || "-",
+      role: u.role?.displayName || u.role?.name || "-",
       managerId: u.reportingManager?._id,
       managerName: u.reportingManager?.name || "-",
       alreadyAssigned: u.hasBucketTask === true,
@@ -310,14 +310,14 @@ const TaskDistribution = () => {
       },
     },
 
-    {
-      title: "Reporting Manager",
-      dataIndex: "managerName",
+    // {
+    //   title: "Reporting Manager",
+    //   dataIndex: "managerName",
 
-      render: (value) => (
-        <div className="font-medium text-slate-700">{value}</div>
-      ),
-    },
+    //   render: (value) => (
+    //     <div className="font-medium text-slate-700">{value}</div>
+    //   ),
+    // },
     {
       title: "Status",
       dataIndex: "status",

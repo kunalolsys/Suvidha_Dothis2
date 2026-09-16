@@ -88,7 +88,7 @@ const EditUser = () => {
       telegramUserName: "",
       role: "",
       department: [],
-      reportingManager: "",
+      // reportingManager: "",
       assignShift: "",
       password: "",
       confirmPassword: "",
@@ -134,16 +134,16 @@ const EditUser = () => {
       }),
       role: Yup.string().required("Role is required"),
       // reportingManager: Yup.string().required("Reporting Manager is required"),
-      reportingManager: Yup.string().when("role", {
-        is: (roleId) => {
-          const selectedRole = roles.find((r) => r._id === roleId);
-          return (
-            selectedRole?.name !== "Owner" && selectedRole?.name !== "Admin"
-          );
-        },
-        then: (schema) => schema.required("Reporting Manager is required"),
-        otherwise: (schema) => schema.notRequired(),
-      }),
+      // reportingManager: Yup.string().when("role", {
+      //   is: (roleId) => {
+      //     const selectedRole = roles.find((r) => r._id === roleId);
+      //     return (
+      //       selectedRole?.name !== "Owner" && selectedRole?.name !== "Admin"
+      //     );
+      //   },
+      //   then: (schema) => schema.required("Reporting Manager is required"),
+      //   otherwise: (schema) => schema.notRequired(),
+      // }),
       assignShift: Yup.string().required("Assign Shift is required"),
       password: Yup.string().min(6, "Password must be at least 6 characters"),
       confirmPassword: Yup.string().when("password", {
@@ -202,7 +202,7 @@ const EditUser = () => {
             ? currentUser.employeeCode
             : "",
         role: currentUser.role?._id || "",
-        reportingManager: currentUser?.reportingManager?._id || "",
+        // reportingManager: currentUser?.reportingManager?._id || "",
         assignShift: currentUser.assignShift?._id || "",
         password: "",
         confirmPassword: "",
@@ -514,7 +514,7 @@ const EditUser = () => {
                   </span>
                 )}
               </div>
-              {selectedRole?.name !== "Owner" && (
+              {/* {selectedRole?.name !== "Owner" && (
                 <div className="space-y-2">
                   <Label htmlFor="reportingManager">
                     Reporting Manager{" "}
@@ -589,60 +589,6 @@ const EditUser = () => {
                       );
                     }}
                   />
-                  {/* <Select
-                    onValueChange={(value) =>
-                      formik.setFieldValue("reportingManager", value)
-                    }
-                    value={formik.values.reportingManager}
-                  >
-                    <SelectTrigger id="reportingManager">
-                      <SelectValue placeholder="Select Manager" />
-                    </SelectTrigger>
-
-                    <SelectContent>
-                      {userStatus === "loading" && (
-                        <SelectItem disabled>Loading...</SelectItem>
-                      )}
-
-                      {dropdownUsers
-                        .filter((user) => {
-                          if (!selectedRole) return true;
-
-                          // ✅ Admin / Sr. Manager → only Owner
-                          if (selectedRole.name === "Admin") {
-                            return user.role?.name === "Owner";
-                          }
-                          if (selectedRole.name === "Sr. Manager") {
-                            return ["Owner", "Admin"].includes(user.role?.name);
-                          }
-
-                          // ✅ Manager → Owner + Admin + Sr. Manager
-                          if (selectedRole.name === "Manager") {
-                            return ["Owner", "Admin", "Sr. Manager"].includes(
-                              user.role?.name,
-                            );
-                          }
-
-                          return true;
-                        })
-                        .map((user) => (
-                          <SelectItem key={user._id} value={user._id}>
-                            <div className="flex items-center justify-between w-full">
-                              <span className="me-2">{user.name}</span>
-                              <span
-                                className={`text-xs px-2 py-0.5 rounded ${
-                                  roleColors[user.role?.name] ||
-                                  "bg-gray-100 text-gray-700"
-                                }`}
-                              >
-                                {user.role?.name}
-                              </span>
-                            </div>{" "}
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select> */}
-
                   {formik.touched.reportingManager &&
                     formik.errors.reportingManager && (
                       <span className="text-red-500 text-xs">
@@ -650,7 +596,7 @@ const EditUser = () => {
                       </span>
                     )}
                 </div>
-              )}
+              )} */}
               <div className="space-y-2">
                 <Label htmlFor="assignShift">
                   Assign Shift<span className="text-red-500">*</span>

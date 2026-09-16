@@ -995,10 +995,10 @@ const TodayTasksTable = ({
           ? "bg-red-100 text-red-700"
           : assignedByUser.role?.name === "owner"
             ? "bg-purple-100 text-purple-700"
-            : assignedByUser.role?.name === "sr._manager"
-              ? "bg-blue-100 text-blue-700"
-              : assignedByUser.role?.name === "manager"
-                ? "bg-green-100 text-green-700"
+            // : assignedByUser.role?.name === "sr._manager"
+            //   ? "bg-blue-100 text-blue-700"
+            //   : assignedByUser.role?.name === "manager"
+            //     ? "bg-green-100 text-green-700"
                 : "bg-gray-100 text-gray-700"
       }
     `}
@@ -1022,10 +1022,10 @@ const TodayTasksTable = ({
           ? "bg-red-100 text-red-700"
           : assignedToUser.role?.name === "owner"
             ? "bg-purple-100 text-purple-700"
-            : assignedToUser.role?.name === "sr._manager"
-              ? "bg-blue-100 text-blue-700"
-              : assignedToUser.role?.name === "manager"
-                ? "bg-green-100 text-green-700"
+            // : assignedToUser.role?.name === "sr._manager"
+            //   ? "bg-blue-100 text-blue-700"
+            //   : assignedToUser.role?.name === "manager"
+            //     ? "bg-green-100 text-green-700"
                 : "bg-gray-100 text-gray-700"
       }
     `}

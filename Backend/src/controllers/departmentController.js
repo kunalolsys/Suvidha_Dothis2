@@ -50,7 +50,7 @@ export const exportDepartment = handleAsync(async (req, res) => {
 
 export const getAllDeptsForDrops = handleAsync(async (req, res) => {
   const userId = req.cookies?.userId || req.user?._id || null;
-  const loggedInUser = await User.findById(userId).populate("role", "name");
+  const loggedInUser = await User.findById(userId);
 
   if (!loggedInUser) {
     return res.status(404).json({
@@ -59,44 +59,65 @@ export const getAllDeptsForDrops = handleAsync(async (req, res) => {
     });
   }
 
-  const roleName = loggedInUser.role?.name?.toLowerCase();
-  const isSuperUser = roleName === "admin" || roleName === "owner";
-  const isMember = roleName === "member";
-
-  let departments = [];
-
-  if (isSuperUser) {
-    departments = await Department.find({ isDeleted: false });
-  } else if (isMember) {
-    departments = await Department.find({
-      _id: { $in: loggedInUser.department || [] },
-      isDeleted: false,
-    });
-  } else {
-    const reportingUsers = await User.find({
-      reportingManager: loggedInUser._id,
-      isDeleted: false,
-    }).select("department");
-
-    const deptIds = [
-      ...new Set(
-        reportingUsers.flatMap((u) =>
-          (u.department || []).map((d) => d.toString()),
-        ),
-      ),
-    ];
-
-    departments = await Department.find({
-      _id: { $in: deptIds },
-      isDeleted: false,
-    });
-  }
+  // 🟢 Role/User restriction hata di gayi hai: Sabhi non-deleted departments fetch honge
+  const departments = await Department.find({ isDeleted: { $ne: true } })
+    .select("name _id workingWeekDays")
+    .sort({ name: 1 });
 
   return res.status(200).json({
     success: true,
     data: departments,
   });
 });
+// export const getAllDeptsForDrops = handleAsync(async (req, res) => {
+//   const userId = req.cookies?.userId || req.user?._id || null;
+//   const loggedInUser = await User.findById(userId).populate("role", "name");
+
+//   if (!loggedInUser) {
+//     return res.status(404).json({
+//       success: false,
+//       message: "User not found",
+//     });
+//   }
+
+//   const roleName = loggedInUser.role?.name?.toLowerCase();
+//   const isSuperUser = roleName === "admin" || roleName === "owner";
+//   const isMember = roleName === "member";
+
+//   let departments = [];
+
+//   if (isSuperUser) {
+//     departments = await Department.find({ isDeleted: false });
+//   } else if (isMember) {
+//     departments = await Department.find({
+//       _id: { $in: loggedInUser.department || [] },
+//       isDeleted: false,
+//     });
+//   } else {
+//     const reportingUsers = await User.find({
+//       reportingManager: loggedInUser._id,
+//       isDeleted: false,
+//     }).select("department");
+
+//     const deptIds = [
+//       ...new Set(
+//         reportingUsers.flatMap((u) =>
+//           (u.department || []).map((d) => d.toString()),
+//         ),
+//       ),
+//     ];
+
+//     departments = await Department.find({
+//       _id: { $in: deptIds },
+//       isDeleted: false,
+//     });
+//   }
+
+//   return res.status(200).json({
+//     success: true,
+//     data: departments,
+//   });
+// });
 
 export const getAllDeptsForDropsForFMS = handleAsync(async (req, res) => {
   const departments = await Department.find({ isDeleted: false });

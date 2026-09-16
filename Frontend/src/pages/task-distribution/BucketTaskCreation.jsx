@@ -640,7 +640,7 @@ const BucketCreation = () => {
                         )
                         .map((r) => ({
                           value: r._id,
-                          label: r.name,
+                          label: r.displayName || r.name,
                         }))}
                     />
                   </div>
@@ -919,7 +919,9 @@ const BucketCreation = () => {
                           </p>
 
                           <h3 className="font-semibold text-slate-800">
-                            {roles.find((r) => r._id === selectedRole)?.name}
+                            {roles.find((r) => r._id === selectedRole)
+                              ?.displayName ||
+                              roles.find((r) => r._id === selectedRole)?.name}
                           </h3>
                         </div>
                       </div>

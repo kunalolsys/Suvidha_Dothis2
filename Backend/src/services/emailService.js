@@ -66,7 +66,7 @@ const sendEmail = async ({ to, subject, html }) => {
     });
 
     const mailOptions = {
-      from: `"Himaira TMS" <${process.env.SMTP_EMAIL}>`,
+      from: `"Suvidha Dothis2" <${process.env.SMTP_EMAIL}>`,
       to: sendTo,
       subject,
       html,

@@ -858,7 +858,7 @@ export const getAllTasksWithStats = async (req, res) => {
       const managerId = userId;
 
       const memberUsers = await User.find({ reportingManager: managerId })
-        .populate("role", "name")
+        .populate("role", "name displayName")
         .select("_id role")
         .lean();
 
@@ -2888,7 +2888,7 @@ export const getRoleBasedTasks = handleAsync(async (req, res) => {
       }
     } else if (role === "manager") {
       const memberUsers = await User.find({ reportingManager: userId })
-        .populate("role", "name")
+        .populate("role", "name displayName")
         .select("_id role")
         .lean();
 

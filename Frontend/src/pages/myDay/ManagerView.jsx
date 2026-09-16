@@ -423,7 +423,7 @@ const FilterBar = ({
       </div>
 
       <div className="flex flex-col sm:flex-row gap-2 flex-[2]">
-        {isAdminOrOwner && (
+        {/* {isAdminOrOwner && (
           <Select
             value={selectedSrManager}
             onValueChange={(val) =>
@@ -444,8 +444,8 @@ const FilterBar = ({
               ))}
             </SelectContent>
           </Select>
-        )}
-        {(isAdminOrOwner || isSrManager) && (
+        )} */}
+        {/* {(isAdminOrOwner || isSrManager) && (
           <Select
             value={selectedManager}
             onValueChange={(val) => handleFilterChange(setSelectedManager, val)}
@@ -464,7 +464,7 @@ const FilterBar = ({
               ))}
             </SelectContent>
           </Select>
-        )}
+        )} */}
         <Select
           value={selectedDoer}
           onValueChange={(val) => handleFilterChange(setSelectedDoer, val)}
@@ -851,7 +851,7 @@ const ManagerView = () => {
         const managers = users.filter((u) => u.role?.name === "manager");
         const srManagers = users.filter((u) => u.role?.name === "sr._manager");
 
-        setDoers(doers);
+        setDoers(users);
         setManagers(managers);
         setSrManagers(srManagers);
       } catch (error) {
@@ -1228,10 +1228,10 @@ const ManagerView = () => {
                     ? "bg-red-100 text-red-700"
                     : assignedByUser.role?.name === "owner"
                       ? "bg-purple-100 text-purple-700"
-                      : assignedByUser.role?.name === "sr._manager"
-                        ? "bg-blue-100 text-blue-700"
-                        : assignedByUser.role?.name === "manager"
-                          ? "bg-green-100 text-green-700"
+                      // : assignedByUser.role?.name === "sr._manager"
+                      //   ? "bg-blue-100 text-blue-700"
+                      //   : assignedByUser.role?.name === "manager"
+                      //     ? "bg-green-100 text-green-700"
                           : "bg-gray-100 text-gray-700"
                 }`}
               >
@@ -1253,10 +1253,10 @@ const ManagerView = () => {
                     ? "bg-red-100 text-red-700"
                     : assignedToUser.role?.name === "owner"
                       ? "bg-purple-100 text-purple-700"
-                      : assignedToUser.role?.name === "sr._manager"
-                        ? "bg-blue-100 text-blue-700"
-                        : assignedToUser.role?.name === "manager"
-                          ? "bg-green-100 text-green-700"
+                      // : assignedToUser.role?.name === "sr._manager"
+                      //   ? "bg-blue-100 text-blue-700"
+                      //   : assignedToUser.role?.name === "manager"
+                      //     ? "bg-green-100 text-green-700"
                           : "bg-gray-100 text-gray-700"
                 }`}
               >
@@ -1471,11 +1471,11 @@ const ManagerView = () => {
             onValueChange={handleTabChange}
             className="space-y-6"
           >
-            <TabsList className="grid w-full grid-cols-4 p-1 bg-gray-100 rounded-lg">
+            <TabsList className="grid w-full grid-cols-3 p-1 bg-gray-100 rounded-lg">
               <TabsTrigger value="today">Today's Task</TabsTrigger>
               <TabsTrigger value="upcoming">Upcoming Tasks</TabsTrigger>
               <TabsTrigger value="completed">Completed Tasks</TabsTrigger>
-              <TabsTrigger value="escalated">Escalated</TabsTrigger>
+              {/* <TabsTrigger value="escalated">Escalated</TabsTrigger> */}
             </TabsList>
 
             <FilterBar
@@ -1524,9 +1524,9 @@ const ManagerView = () => {
                   {renderTableContent()}
                 </TabsContent>
 
-                <TabsContent value="escalated" className="">
+                {/* <TabsContent value="escalated" className="">
                   {renderTableContent()}
-                </TabsContent>
+                </TabsContent> */}
 
                 <Pagination
                   totalItems={totalTasks || 0}

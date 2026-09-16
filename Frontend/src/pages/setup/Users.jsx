@@ -21,6 +21,7 @@ import {
   deleteUser,
   addUser,
   exportUsers,
+  importUsers,
 } from "../../redux/slices/user/userSlice";
 import { fetchDepartments } from "../../redux/slices/department/departmentSlice";
 import { fetchRoles } from "../../redux/slices/role/roleSlice";
@@ -219,7 +220,7 @@ const Users = () => {
       "Role",
       "Department",
       "Shift",
-      "Reporting Manager",
+      // "Reporting Manager",
       "Password",
     ];
     const ws = XLSX.utils.aoa_to_sheet([headers]);
@@ -265,123 +266,20 @@ const Users = () => {
 
     setImportResult(null);
     setLoading(true);
-    const promise = new Promise((resolve, reject) => {
-      Papa.parse(uploadFile, {
-        header: true,
-        skipEmptyLines: true,
-        complete: async (results) => {
-          try {
-            const rows = results.data;
-            const validUsers = [];
-            const errorRows = [];
-            const emailsInFile = new Set();
 
-            const existingEmails = new Set(
-              users.map((u) => u.email.toLowerCase()),
-            );
-
-            for (const row of rows) {
-              let errorReason = "";
-              const email = row.Email?.trim().toLowerCase();
-
-              // Validation checks
-              if (
-                !row.Name ||
-                !email ||
-                !row.Role ||
-                !row.Department ||
-                !row.Shift ||
-                !row.Password
-              ) {
-                errorReason =
-                  "Missing one or more required fields (Name, Email, Role, Department, Shift, Password).";
-              } else if (emailsInFile.has(email)) {
-                errorReason = "Duplicate email address found in this file.";
-              } else if (existingEmails.has(email)) {
-                errorReason =
-                  "A user with this email already exists in the system.";
-              }
-
-              if (errorReason) {
-                errorRows.push({ ...row, "Error Reason": errorReason });
-                continue;
-              }
-
-              // Find IDs for Role, Department, Shift, and Reporting Manager
-              const role = roles.find(
-                (r) => r.name.toLowerCase() === row.Role.trim().toLowerCase(),
-              );
-              const shift = workShifts.find(
-                (s) => s.name.toLowerCase() === row.Shift.trim().toLowerCase(),
-              );
-              const manager = users.find(
-                (u) =>
-                  u.name.toLowerCase() ===
-                  row["Reporting Manager"]?.trim().toLowerCase(),
-              );
-
-              const departmentString = row.Department || "";
-              const departmentNames = departmentString
-                .split(",")
-                .map((d) => d.trim().toLowerCase());
-
-              const departmentIds = departments
-                .filter((d) => departmentNames.includes(d.name.toLowerCase()))
-                .map((d) => d._id);
-
-              if (!role) {
-                errorRows.push({
-                  ...row,
-                  "Error Reason": `Role '${row.Role}' not found.`,
-                });
-                continue;
-              }
-              if (!shift) {
-                errorRows.push({
-                  ...row,
-                  "Error Reason": `Shift '${row.Shift}' not found.`,
-                });
-                continue;
-              }
-
-              emailsInFile.add(email);
-              validUsers.push({
-                name: row.Name,
-                email: row.Email,
-                phone: row.Phone || "",
-                password: row.Password,
-                employeeCode: row["Employee Code"]?.trim() || undefined,
-                role: role._id,
-                department: departmentIds,
-                assignShift: shift._id,
-                reportingManager: manager?._id,
-              });
-            }
-
-            // Process valid users
-            if (validUsers.length > 0) {
-              for (const userData of validUsers) {
-                await dispatch(addUser(userData)).unwrap();
-              }
-            }
-
-            resolve({ validCount: validUsers.length, errorRows });
-          } catch (err) {
-            reject(err);
-          }
-        },
-        error: (err) => {
-          reject(err);
-        },
-      });
-    });
+    // Dispatch Redux Action
+    const promise = dispatch(importUsers(uploadFile)).unwrap();
 
     toast.promise(promise, {
-      loading: "Processing user import...",
-      success: ({ validCount, errorRows }) => {
+      loading: "Processing user import on server...",
+      success: (res) => {
+        const { validCount, errorRows } = res.data;
         const result = { validCount, errorRows };
+
         setImportResult(result);
         setLoading(false);
+
+        // Refresh User Table
         dispatch(
           fetchUsers({
             page,
@@ -391,18 +289,24 @@ const Users = () => {
             selectedShift,
             debouncedSearch,
           }),
-        ); // Refresh user list
+        );
 
-        return `${validCount} user(s) processed. Check the dialog for details.`;
+        return `${validCount} user(s) imported successfully. Check dialog for details.`;
       },
       error: (err) => {
         setLoading(false);
+        const errorMessage =
+          typeof err === "string"
+            ? err
+            : err.message || "An unknown error occurred.";
+
         setImportResult({
           validCount: 0,
           errorRows: [],
-          generalError: err.message,
+          generalError: errorMessage,
         });
-        return `Import failed: ${err.message || "An unknown error occurred."}`;
+
+        return `Import failed: ${errorMessage}`;
       },
     });
   };
@@ -417,13 +321,26 @@ const Users = () => {
           searchTerm: debouncedSearch,
         }),
       ).unwrap();
+
       if (!res || res.length === 0) {
         toast.error("No users to export");
         return;
       }
 
-      const rows = res.map((user, idx) => {
-        const manager = res.find((u) => u._id === user.reportingManager);
+      // 🟢 Super User ko export list se exclude (filter) karein
+      const filteredRes = res.filter(
+        (user) => user.role?.name?.toLowerCase() !== "super",
+      );
+
+      if (filteredRes.length === 0) {
+        toast.error("No users to export");
+        return;
+      }
+
+      const rows = filteredRes.map((user, idx) => {
+        const manager = filteredRes.find(
+          (u) => u._id === user.reportingManager,
+        );
         return {
           "Sr. No.": idx + 1,
           "Employee Code": user.employeeCode || "-",
@@ -433,7 +350,7 @@ const Users = () => {
           Department: user.department?.map((d) => d.name).join(", ") || "-",
           Role: user.role?.name || "N/A",
           Shift: user.assignShift?.name || "N/A",
-          "Reporting Manager": manager?.name || "N/A",
+          // "Reporting Manager": manager?.name || "N/A",
         };
       });
 
@@ -561,7 +478,7 @@ const Users = () => {
               ) : (
                 roles.map((role) => (
                   <SelectItem key={role._id} value={role._id}>
-                    {role.displayName||role.name}
+                    {role.displayName || role.name}
                   </SelectItem>
                 ))
               )}
@@ -599,7 +516,7 @@ const Users = () => {
                 <TableHead>Phone</TableHead>
                 <TableHead>Email</TableHead>
                 <TableHead>Department(s)</TableHead>
-                <TableHead>Reporting Manager</TableHead>
+                {/* <TableHead>Reporting Manager</TableHead> */}
                 <TableHead>Primary Role</TableHead>
                 <TableHead>Shifts</TableHead>
                 <TableHead>Telegram Notification</TableHead>
@@ -630,7 +547,7 @@ const Users = () => {
                     <TableCell>
                       {user.department?.map((d) => d.name).join(", ")}
                     </TableCell>
-                    <TableCell>{user.reportingManager?.name || ""}</TableCell>
+                    {/* <TableCell>{user.reportingManager?.name || ""}</TableCell> */}
                     <TableCell>{user.role?.displayName || ""}</TableCell>
                     <TableCell>{user.assignShift?.name}</TableCell>
                     <TableCell>
@@ -793,12 +710,12 @@ const Users = () => {
                     <code className="bg-gray-200 px-1 rounded">Shift</code>{" "}
                     (Must match an existing Shift name)
                   </li>
-                  <li>
+                  {/* <li>
                     <code className="bg-gray-200 px-1 rounded">
                       Reporting Manager
                     </code>{" "}
                     (Manager's Name)
-                  </li>
+                  </li> */}
                   <li>
                     <code className="bg-gray-200 px-1 rounded">Password</code>{" "}
                     (Min. 6 characters)

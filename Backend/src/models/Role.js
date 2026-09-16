@@ -92,7 +92,7 @@ export const SYSTEM_MODULES = [
 
 // Flat Keys array for Enum validation
 export const ALL_SUBMODULE_KEYS = SYSTEM_MODULES.flatMap((m) =>
-  m.submodules.map((s) => s.key)
+  m.submodules.map((s) => s.key),
 );
 
 // ----------------------------------------------------
@@ -105,7 +105,7 @@ const actionPermissionSchema = new mongoose.Schema(
     update: { type: Boolean, default: false },
     delete: { type: Boolean, default: false },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const submodulePermissionSchema = new mongoose.Schema(
@@ -133,7 +133,7 @@ const submodulePermissionSchema = new mongoose.Schema(
       }),
     },
   },
-  { _id: false }
+  { _id: false },
 );
 
 // ----------------------------------------------------
@@ -168,7 +168,7 @@ const roleSchema = new mongoose.Schema(
       default: true,
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 // Unique Index
@@ -184,8 +184,8 @@ roleSchema.pre("save", function (next) {
     if (hasDuplicates) {
       return next(
         new Error(
-          "Duplicate submodule permissions are not allowed in the same role."
-        )
+          "Duplicate submodule permissions are not allowed in the same role.",
+        ),
       );
     }
   }
@@ -199,9 +199,12 @@ const getFullAccessPermissions = () =>
       parentModuleKey: parent.key,
       submoduleKey: sub.key,
       actions: { create: true, read: true, update: true, delete: true },
-    }))
+    })),
   );
 
+// ----------------------------------------------------
+// 4. UPDATED FIXED ROLES (Admin, Owner, Super, DM, Member)
+// ----------------------------------------------------
 const FIXED_ROLES = [
   {
     name: "admin",
@@ -210,23 +213,23 @@ const FIXED_ROLES = [
     isSystemRole: true,
     permissions: getFullAccessPermissions(),
   },
+  // {
+  //   name: "owner",
+  //   displayName: "Owner",
+  //   canDelete: false,
+  //   isSystemRole: true,
+  //   permissions: getFullAccessPermissions(),
+  // },
   {
-    name: "owner",
-    displayName: "Owner",
+    name: "super",
+    displayName: "Super",
     canDelete: false,
     isSystemRole: true,
     permissions: getFullAccessPermissions(),
   },
   {
-    name: "sr._manager",
-    displayName: "Sr. Manager",
-    canDelete: false,
-    isSystemRole: true,
-    permissions: [],
-  },
-  {
-    name: "manager",
-    displayName: "Manager",
+    name: "dm",
+    displayName: "DM",
     canDelete: false,
     isSystemRole: true,
     permissions: [],

@@ -92,7 +92,7 @@ export const taskAssignedTemplate = ({
           </div>
 
           <div style="padding:20px;background:#f8fafc;border-top:1px solid #e2e8f0;text-align:center;font-size:12px;color:#64748b;">
-            Dothis2
+            Suvidha Dothis2
           </div>
         </div>
       </div>

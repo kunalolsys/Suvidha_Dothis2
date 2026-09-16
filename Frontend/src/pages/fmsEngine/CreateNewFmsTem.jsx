@@ -200,8 +200,8 @@ const CreateNewFmsTem = () => {
       description: "",
       fmsDuration: "Timeless",
       endDate: "",
-      manager: "",
-      srManager: "",
+      // manager: "",
+      // srManager: "",
     },
     onSubmit: async (values) => {
       setLoading(true);
@@ -212,10 +212,10 @@ const CreateNewFmsTem = () => {
             return;
           }
 
-          if (!values.manager) {
-            toast.error("Manager is required");
-            return;
-          }
+          // if (!values.manager) {
+          //   toast.error("Manager is required");
+          //   return;
+          // }
           const payload = {
             ...values,
           };
@@ -360,8 +360,8 @@ const CreateNewFmsTem = () => {
         description: data.description,
         fmsDuration: data.fmsDuration,
         endDate: data.endDate,
-        manager: data.manager?._id,
-        srManager: data.srManager?._id,
+        // manager: data.manager?._id,
+        // srManager: data.srManager?._id,
       });
     } catch (err) {
       console.error(err);
@@ -442,15 +442,15 @@ const CreateNewFmsTem = () => {
         description: values.description,
         fmsDuration: values.fmsDuration,
         endDate: values.endDate,
-        manager:
-          typeof values.manager === "object"
-            ? values.manager._id
-            : values.manager,
+        // manager:
+        //   typeof values.manager === "object"
+        //     ? values.manager._id
+        //     : values.manager,
 
-        srManager:
-          typeof values.srManager === "object"
-            ? values.srManager._id
-            : values.srManager,
+        // srManager:
+        //   typeof values.srManager === "object"
+        //     ? values.srManager._id
+        //     : values.srManager,
 
         tasks: cleanedTasks,
       };
@@ -705,7 +705,7 @@ const CreateNewFmsTem = () => {
                 />
               </div>
 
-              <div className="space-y-2">
+              {/* <div className="space-y-2">
                 <Label>Manager *</Label>
                 <Select
                   disabled={isAlreadyLaunched}
@@ -743,7 +743,7 @@ const CreateNewFmsTem = () => {
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
+              </div> */}
 
               <div className="space-y-2">
                 <Label>FMS Duration</Label>

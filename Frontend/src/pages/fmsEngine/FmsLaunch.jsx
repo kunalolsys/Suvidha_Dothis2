@@ -341,7 +341,7 @@ const FmsLaunch = () => {
                   )}
 
                   {/* Manager */}
-                  <div className="space-y-2">
+                  {/* <div className="space-y-2">
                     <Label htmlFor="manager-select" className="text-slate-600">
                       Manager
                     </Label>
@@ -367,10 +367,10 @@ const FmsLaunch = () => {
                         ))}
                       </SelectContent>
                     </Select>
-                  </div>
+                  </div> */}
 
                   {/* Sr. Manager */}
-                  <div className="space-y-2">
+                  {/* <div className="space-y-2">
                     <Label
                       htmlFor="sr-manager-select"
                       className="text-slate-600"
@@ -399,7 +399,7 @@ const FmsLaunch = () => {
                         ))}
                       </SelectContent>
                     </Select>
-                  </div>
+                  </div> */}
                 </div>
 
                 {/* --- Tasks Preview (Enhanced UI) --- */}

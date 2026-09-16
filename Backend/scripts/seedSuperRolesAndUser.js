@@ -19,22 +19,7 @@ const getFullAccessPermissions = (modulesTree) =>
       parentModuleKey: parent.key,
       submoduleKey: sub.key,
       actions: { create: true, read: true, update: true, delete: true },
-    }))
-  );
-
-// Helper: Generates manager-level access excluding specific restricted submodules
-const getManagerAccessPermissions = (modulesTree) =>
-  modulesTree.flatMap((parent) =>
-    parent.submodules
-      .filter(
-        (sub) =>
-          !["task_buckets", "pending_buckets", "bucket_view"].includes(sub.key)
-      )
-      .map((sub) => ({
-        parentModuleKey: parent.key,
-        submoduleKey: sub.key,
-        actions: { create: true, read: true, update: true, delete: true },
-      }))
+    })),
   );
 
 async function ensureDefaultModules() {
@@ -104,13 +89,19 @@ async function ensureOpenDepartment() {
   return department;
 }
 
-// FIXED: Clear out legacy format permissions and set new schema payload directly
-async function ensureRole({ name, displayName, permissions }) {
+// 🟢 FIXED: Preserves existing database permissions on re-run instead of wiping them!
+async function ensureRole({
+  name,
+  displayName,
+  permissions,
+  isFullAccess = false,
+}) {
   const formattedName = name.trim().toLowerCase().replace(/\s+/g, "_");
 
   let role = await Role.findOne({ name: formattedName });
 
   if (!role) {
+    // Agar role DB me bilkul NAYA hai, tabhi create karenge default permissions ke sath
     return await Role.create({
       name: formattedName,
       displayName: displayName || name,
@@ -120,10 +111,19 @@ async function ensureRole({ name, displayName, permissions }) {
     });
   }
 
-  // Set fresh permissions matching new Submodule schema to override old legacy schema
-  role.permissions = permissions;
+  // 🟢 Agar role already exist karta hai:
   role.canDelete = false;
   role.isSystemRole = true;
+
+  // Sirf Super & Admin jaise Full Access Roles ko hamesha latest permissions sync karenge
+  if (isFullAccess) {
+    role.permissions = permissions;
+  } else {
+    // 🟢 DM, Member ya custom roles ke liye: Agar DB me pehle se permissions hain toh UNHE OVERWRITE NAHI KARENGE
+    if (!role.permissions || role.permissions.length === 0) {
+      role.permissions = permissions;
+    }
+  }
 
   await role.save();
   return role;
@@ -166,6 +166,7 @@ async function ensureUser({
   roleId,
   assignShift,
   departmentIds,
+  reportingManager = null,
 }) {
   const normalizedEmail = email.toLowerCase().trim();
 
@@ -176,13 +177,12 @@ async function ensureUser({
 
   if (existing) {
     console.log(
-      `User already exists (${existing.email} | ${existing.employeeCode}). Skipping.`
+      `User already exists (${existing.email} | ${existing.employeeCode}). Skipping.`,
     );
     return existing;
   }
 
   const salt = await bcrypt.genSalt(10);
-  const hashedPassword = await bcrypt.hash(password, salt);
 
   const user = await User.create({
     name,
@@ -192,7 +192,7 @@ async function ensureUser({
     companyCode: "",
     department: departmentIds,
     role: roleId,
-    reportingManager: null,
+    reportingManager: reportingManager,
     assignShift,
     password,
     isActive: true,
@@ -221,33 +221,36 @@ async function main() {
     // 1. Initialize System Module Settings
     await ensureDefaultModules();
 
-    // 2. Prepare Permissions Array matching new Nested Submodule Schema
+    // 2. Prepare Permissions Array
     const fullPermissions = getFullAccessPermissions(SYSTEM_MODULES);
-    const managerPermissions = getManagerAccessPermissions(SYSTEM_MODULES);
 
     // 3. Ensure Fixed System Roles
     const superRole = await ensureRole({
-      name: "Super",
+      name: "super",
       displayName: "Super",
       permissions: fullPermissions,
+      isFullAccess: true, // Hamesha all permissions synced rahenge
     });
 
     const adminRole = await ensureRole({
-      name: "Admin",
+      name: "admin",
       displayName: "Admin",
       permissions: fullPermissions,
+      isFullAccess: true, // Hamesha all permissions synced rahenge
     });
 
-    const srManagerRole = await ensureRole({
-      name: "Sr. Manager",
-      displayName: "Sr. Manager",
-      permissions: managerPermissions,
+    const dmRole = await ensureRole({
+      name: "dm",
+      displayName: "DM",
+      permissions: [],
+      isFullAccess: false, // 🟢 Single-time create hone ke baad DB me jo bhi save / assign hoga, woh safe rahega!
     });
 
-    const managerRole = await ensureRole({
-      name: "Manager",
-      displayName: "Manager",
-      permissions: managerPermissions,
+    const memberRole = await ensureRole({
+      name: "member",
+      displayName: "Member",
+      permissions: [],
+      isFullAccess: false, // 🟢 Same for Member
     });
 
     // 4. Ensure Organizational Defaults
@@ -258,8 +261,8 @@ async function main() {
     const assignShift = defaultShift._id.toString();
     const departmentIds = [openDepartment._id];
 
-    // 5. Seed Core System Users
-    await ensureUser({
+    // 5. Seed Super User FIRST
+    const superUser = await ensureUser({
       employeeCode: "SUPER001",
       name: "Super User",
       email: process.env.SUPERUSER_EMAIL || "super@gmail.com",
@@ -268,46 +271,54 @@ async function main() {
       roleId: superRole._id,
       assignShift,
       departmentIds,
+      reportingManager: null,
     });
 
-    await ensureUser({
+    const superId = superUser ? superUser._id : null;
+
+    // 6. Seed Admin User SECOND
+    const adminUser = await ensureUser({
       employeeCode: "ADMIN001",
-      name: "Admin",
+      name: "Admin User",
       email: "admin@dothis2.com",
       phone: "1234567810",
       password: "Admin@123",
       roleId: adminRole._id,
       assignShift,
       departmentIds,
+      reportingManager: superId,
+    });
+
+    const adminId = adminUser ? adminUser._id : null;
+
+    // 7. Seed Remaining Users
+    await ensureUser({
+      employeeCode: "DM001",
+      name: "DM User",
+      email: "dm@dothis2.com",
+      phone: "1234567812",
+      password: "DMUser@123",
+      roleId: dmRole._id,
+      assignShift,
+      departmentIds,
+      reportingManager: adminId,
     });
 
     await ensureUser({
-      employeeCode: "SRMANAGER001",
-      name: "Sr Manager",
-      email: "srmanager@dothis2.com",
-      phone: "1224567890",
-      password: "SrManager@123",
-      roleId: srManagerRole._id,
+      employeeCode: "MEMBER001",
+      name: "Member User",
+      email: "member@dothis2.com",
+      phone: "1234567813",
+      password: "Member@123",
+      roleId: memberRole._id,
       assignShift,
       departmentIds,
-    });
-
-    await ensureUser({
-      employeeCode: "MANAGER001",
-      name: "Manager",
-      email: "manager@dothis2.com",
-      phone: "1234562290",
-      password: "Manager@123",
-      roleId: managerRole._id,
-      assignShift,
-      departmentIds,
+      reportingManager: adminId,
     });
 
     console.log("Seeding process completed successfully.");
-    // process.exit(0);
   } catch (error) {
     console.error("Seeding failed:", error);
-    // process.exit(1);
   }
 }
 

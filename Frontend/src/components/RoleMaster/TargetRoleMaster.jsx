@@ -320,7 +320,7 @@ const TaskAudienceMaster = () => {
               {assignmentMode === "Role" ? (
                 selectedRoleData ? (
                   <Badge className="rounded-xl px-4 py-3 bg-blue-100 text-blue-700 border-blue-200 text-sm">
-                    👥 {selectedRoleData.name}
+                    👥 {selectedRoleData.displayName || selectedRoleData.name}
                   </Badge>
                 ) : (
                   <div className="text-sm text-slate-400">No role selected</div>

@@ -236,7 +236,7 @@ export default function FmsPremiumView() {
               {/* Managers */}
               <div className="flex flex-wrap gap-3">
                 {/* MANAGER */}
-                {instance.manager && (
+                {/* {instance.manager && (
                   <motion.div
                     className="group flex items-center gap-2 p-3 bg-gradient-to-br from-blue-50/80 to-indigo-50/60 backdrop-blur rounded-xl border border-blue-100/50 shadow-md hover:shadow-lg hover:scale-[1.02] transition-all duration-300 min-w-[140px]"
                     whileHover={{ y: -2 }}
@@ -254,10 +254,10 @@ export default function FmsPremiumView() {
                       </p>
                     </div>
                   </motion.div>
-                )}
+                )} */}
 
                 {/* SR MANAGER */}
-                {instance.srManager && (
+                {/* {instance.srManager && (
                   <motion.div
                     className="group flex items-center gap-2 p-3 bg-gradient-to-br from-emerald-50/80 to-green-50/60 backdrop-blur rounded-xl border border-emerald-100/50 shadow-md hover:shadow-lg hover:scale-[1.02] transition-all duration-300 min-w-[140px]"
                     whileHover={{ y: -2 }}
@@ -275,7 +275,7 @@ export default function FmsPremiumView() {
                       </p>
                     </div>
                   </motion.div>
-                )}
+                )} */}
               </div>
             </div>
 

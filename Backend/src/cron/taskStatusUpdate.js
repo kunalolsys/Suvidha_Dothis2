@@ -80,16 +80,21 @@ async function updateTaskStatuses() {
         const parentInstance = blockedInstances.find(
           (i) => i._id.toString() === instanceIdStr,
         );
+        let newStatus = t.status;
 
-        let newStatus = "Stopped";
-        if (
+        // 🟢 FIX: Prioritize "Onhold" status check FIRST
+        if (parentInstance.status === "Onhold") {
+          newStatus = "Onhold";
+        } else if (
           parentInstance.isTerminated ||
+          parentInstance.status === "Terminated"
+        ) {
+          newStatus = "Terminated";
+        } else if (
           parentInstance.isStopped ||
           parentInstance.status === "Stopped"
         ) {
-          newStatus = "Terminated"; // 👈 Updated status to Terminated
-        } else if (parentInstance.status === "Onhold") {
-          newStatus = "Onhold";
+          newStatus = "Stopped";
         }
 
         if (t.status !== newStatus) {

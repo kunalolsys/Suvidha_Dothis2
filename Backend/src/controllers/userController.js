@@ -7,7 +7,7 @@ import Department from "../models/Department.js";
 import WorkShift from "../models/WorkShift.js";
 import sendEmail from "../services/emailService.js";
 import fs from "fs";
-
+import csvParser from "csv-parser";
 import {
   greetingTemplate,
   taskAssignedTemplate,
@@ -115,7 +115,7 @@ export const getAllUsers = handleAsync(async (req, res, next) => {
       totalPages: Math.ceil(total / Number(limit)),
     },
   });
-});;
+});
 export const getAllUsersForDrop = handleAsync(async (req, res, next) => {
   const filter = { isDeleted: { $ne: true }, isActive: true };
   // ✅ Fetch users
@@ -128,7 +128,7 @@ export const getAllUsersForDrop = handleAsync(async (req, res, next) => {
   }
   const users = await User.find(filter, "-password")
     .populate("department", "name")
-    .populate("role", "name")
+    .populate("role", "name displayName")
     .populate("assignShift")
     .sort({ createdAt: -1 });
   const totalUser = await User.countDocuments(filter);
@@ -177,7 +177,7 @@ export const exportUsers = handleAsync(async (req, res) => {
   // 🔥 NO PAGINATION HERE
   const users = await User.find(filter, "-password")
     .populate("department", "name")
-    .populate("role", "name")
+    .populate("role", "name displayName")
     .populate("assignShift");
 
   return res.status(200).json({
@@ -199,7 +199,7 @@ export const getAllUserForDrops = handleAsync(async (req, res) => {
   const users = await User.find(filter)
     .select("department role assignShift name _id")
     .populate("department", "name")
-    .populate("role", "name")
+    .populate("role", "name displayName")
     .populate("assignShift");
 
   return res.status(200).json({
@@ -209,7 +209,7 @@ export const getAllUserForDrops = handleAsync(async (req, res) => {
 });
 export const getAllFilterUserForDrops = handleAsync(async (req, res) => {
   const userId = req.cookies.userId || req.user._id || null;
-  const loggedInUser = await User.findById(userId).populate("role", "name");
+  const loggedInUser = await User.findById(userId).populate("role", "name displayName");
 
   if (!loggedInUser) {
     return res.status(404).json({
@@ -218,38 +218,25 @@ export const getAllFilterUserForDrops = handleAsync(async (req, res) => {
     });
   }
 
-  const roleName = loggedInUser.role?.name?.toLowerCase();
-
-  const isSuperUser = roleName === "admin" || roleName === "owner";
-  const isMember = roleName === "member";
-
+  // Base filter: non-deleted users
   let filter = {
     isDeleted: { $ne: true },
   };
 
-  // ✅ Non-admin users only see reporting users
-  if (!isSuperUser) {
-    // ✅ Member → only himself
-    if (isMember) {
-      filter._id = loggedInUser._id;
-    }
-
-    // ✅ Manager / Sr.Manager → reporting users
-    else {
-      filter.reportingManager = loggedInUser._id;
-    }
-  }
+  // Exclude Super role if present
   const superRole = await Role.findOne({
-    name: "Super",
+    name: { $regex: /^super$/i },
   }).select("_id");
 
   if (superRole) {
     filter.role = { $ne: superRole._id };
   }
+
+  // Fetch all users without department/reporting restrictions
   const users = await User.find(filter)
-    .select("department role assignShift name _id reportingManager")
+    .select("department role assignShift name _id reportingManager email")
     .populate("department", "name")
-    .populate("role", "name")
+    .populate("role", "name displayName")
     .populate("assignShift");
 
   return res.status(200).json({
@@ -257,6 +244,56 @@ export const getAllFilterUserForDrops = handleAsync(async (req, res) => {
     data: users,
   });
 });
+// export const getAllFilterUserForDrops = handleAsync(async (req, res) => {
+//   const userId = req.cookies.userId || req.user._id || null;
+//   const loggedInUser = await User.findById(userId).populate("role", "name");
+
+//   if (!loggedInUser) {
+//     return res.status(404).json({
+//       success: false,
+//       message: "User not found",
+//     });
+//   }
+
+//   const roleName = loggedInUser.role?.name?.toLowerCase();
+
+//   const isSuperUser = roleName === "admin" || roleName === "owner";
+//   const isMember = roleName === "member";
+
+//   let filter = {
+//     isDeleted: { $ne: true },
+//   };
+
+//   // ✅ Non-admin users only see reporting users
+//   if (!isSuperUser) {
+//     // ✅ Member → only himself
+//     if (isMember) {
+//       filter._id = loggedInUser._id;
+//     }
+
+//     // ✅ Manager / Sr.Manager → reporting users
+//     else {
+//       filter.reportingManager = loggedInUser._id;
+//     }
+//   }
+//   const superRole = await Role.findOne({
+//     name: "Super",
+//   }).select("_id");
+
+//   if (superRole) {
+//     filter.role = { $ne: superRole._id };
+//   }
+//   const users = await User.find(filter)
+//     .select("department role assignShift name _id reportingManager")
+//     .populate("department", "name")
+//     .populate("role", "name")
+//     .populate("assignShift");
+
+//   return res.status(200).json({
+//     success: true,
+//     data: users,
+//   });
+// });
 export const createUser = handleAsync(async (req, res, next) => {
   const {
     name,
@@ -265,7 +302,7 @@ export const createUser = handleAsync(async (req, res, next) => {
     telegramUserName,
     department,
     role,
-    reportingManager,
+    // reportingManager, // Removed from destructuring
     assignShift,
     password,
     employeeCode,
@@ -278,6 +315,7 @@ export const createUser = handleAsync(async (req, res, next) => {
   if (!name || !email || !phone || !password) {
     return next(new AppError("Please provide all required fields", 400));
   }
+
   // Validate unique employeeCode if provided
   if (employeeCode) {
     const existingCode = await User.findOne({
@@ -296,7 +334,14 @@ export const createUser = handleAsync(async (req, res, next) => {
       new AppError("Secondary email required when selected as main", 400),
     );
   }
-  // const hashedPassword = await bcrypt.hash(password, 12);
+
+  // 🚀 Fetch Admin Role User to set as default Reporting Manager
+  const adminRole = await Role.findOne({ name: "admin" });
+  let adminUser = null;
+
+  if (adminRole) {
+    adminUser = await User.findOne({ role: adminRole._id, isDeleted: false });
+  }
 
   const newUser = await User.create({
     name,
@@ -310,16 +355,14 @@ export const createUser = handleAsync(async (req, res, next) => {
         ? department
         : undefined,
     role,
-    // reportingManager,
-    reportingManager:
-      reportingManager && mongoose.Types.ObjectId.isValid(reportingManager)
-        ? reportingManager
-        : undefined,
+    // 🚀 Always set Admin User ID as reportingManager
+    reportingManager: adminUser ? adminUser._id : undefined,
     assignShift,
     password: password,
     isEmailNotificationEnabled: isEmailNotificationEnabled,
     mainEmailType: mainEmailType || "email",
   });
+
   await createLog({
     action: "CREATE",
     module: "USER",
@@ -328,6 +371,7 @@ export const createUser = handleAsync(async (req, res, next) => {
     newData: newUser,
     message: "User created",
   });
+
   res.status(201).json({
     status: "success",
     data: {
@@ -483,7 +527,7 @@ export const updateUser = handleAsync(async (req, res, next) => {
   // await sendEmail()
   const updatedUser = await User.findById(user._id)
     .populate("department", "name")
-    .populate("role", "name")
+    .populate("role", "name displayName")
     .populate("assignShift");
 
   const userObj = updatedUser.toObject();
@@ -529,7 +573,7 @@ export const getSingleUser = handleAsync(async (req, res, next) => {
   const { id } = req.params;
   const user = await User.findById(id)
     .populate("department", "name")
-    .populate("role", "name")
+    .populate("role", "name displayName")
     .populate("assignShift")
     .populate("reportingManager", "name");
   if (!user) {
@@ -542,5 +586,199 @@ export const getSingleUser = handleAsync(async (req, res, next) => {
   res.status(200).json({
     success: true,
     data: userObj,
+  });
+});
+
+export const importUsersCSV = handleAsync(async (req, res, next) => {
+  if (!req.file) {
+    return next(new AppError("Please upload a CSV file.", 400));
+  }
+
+  const filePath = req.file.path;
+  const rawRows = [];
+
+  // 1. Read & Parse CSV File into Memory
+  try {
+    await new Promise((resolve, reject) => {
+      fs.createReadStream(filePath)
+        .pipe(csvParser())
+        .on("data", (data) => rawRows.push(data))
+        .on("end", resolve)
+        .on("error", reject);
+    });
+  } catch (parseErr) {
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    return next(new AppError("Failed to parse CSV file format.", 400));
+  }
+
+  // File cleanup
+  if (fs.existsSync(filePath)) {
+    fs.unlinkSync(filePath);
+  }
+
+  if (rawRows.length === 0) {
+    return next(new AppError("CSV file is empty.", 400));
+  }
+
+  // 🟢 CLEAN CSV KEYS (Remove UTF-8 BOM mark `﻿` and trim whitespace from Header Keys)
+  const rows = rawRows.map((row) => {
+    const cleanRow = {};
+    Object.keys(row).forEach((key) => {
+      const cleanKey = key.replace(/^\uFEFF/, "").trim(); // Strip BOM
+      cleanRow[cleanKey] = row[key];
+    });
+    return cleanRow;
+  });
+
+  // 2. Pre-fetch Masters
+  const [allRoles, allShifts, allDepartments, existingUsers] = await Promise.all([
+    Role.find({}),
+    WorkShift.find({ isDeleted: false }),
+    Department.find({ isDeleted: false }),
+    User.find({ isDeleted: false }).select("email phone employeeCode role _id"),
+  ]);
+
+  // Lookup Maps (Case-insensitive & Trimmed)
+  const roleMap = new Map(allRoles.map((r) => [r.name.trim().toLowerCase(), r]));
+  const shiftMap = new Map(allShifts.map((s) => [s.name.trim().toLowerCase(), s._id]));
+  const deptMap = new Map(allDepartments.map((d) => [d.name.trim().toLowerCase(), d._id]));
+
+  // Standard hierarchy lookup (matching createUser logic)
+  const superRole = allRoles.find((r) => r.name.toLowerCase() === "super");
+  const adminRole = allRoles.find((r) => r.name.toLowerCase() === "admin");
+
+  const superUser = existingUsers.find((u) => String(u.role) === String(superRole?._id));
+  const adminUser = existingUsers.find((u) => String(u.role) === String(adminRole?._id));
+
+  // Duplicates tracking sets
+  const existingEmails = new Set(existingUsers.map((u) => u.email?.toLowerCase()).filter(Boolean));
+  const existingEmpCodes = new Set(existingUsers.map((u) => u.employeeCode?.trim().toLowerCase()).filter(Boolean));
+
+  const emailsInCSV = new Set();
+  const validUsersToCreate = [];
+  const errorRows = [];
+
+  // 3. Process Rows using exact createUser logic
+  for (const row of rows) {
+    const name = (row.Name || "").trim();
+    const email = (row.Email || "").trim().toLowerCase();
+    const phone = (row.Phone || "").trim();
+    const password = (row.Password || "").trim();
+    const empCode = (row["Employee Code"] || row["Employee"] || "").trim();
+    const roleName = (row.Role || "").trim().toLowerCase();
+    const shiftName = (row.Shift || "").trim().toLowerCase();
+    const deptString = (row.Departme || row.Department || "").trim();
+
+    let errorReason = "";
+
+    // 🟢 Exact createUser validations
+    if (!name || !email || !phone || !password) {
+      errorReason = "Please provide all required fields (Name, Email, Phone, Password).";
+    } else if (empCode && existingEmpCodes.has(empCode.toLowerCase())) {
+      errorReason = `Employee code '${empCode}' already exists in system.`;
+    } else if (emailsInCSV.has(email) || existingEmails.has(email)) {
+      errorReason = `User with email '${email}' already exists.`;
+    }
+
+    if (errorReason) {
+      errorRows.push({ ...row, "Error Reason": errorReason });
+      continue;
+    }
+
+    // Resolve Role & Shift
+    const matchedRoleObj = roleMap.get(roleName);
+    const shiftId = shiftMap.get(shiftName);
+
+    if (!matchedRoleObj) {
+      errorRows.push({ ...row, "Error Reason": `Role '${row.Role}' not found.` });
+      continue;
+    }
+    if (!shiftId) {
+      errorRows.push({ ...row, "Error Reason": `Shift '${row.Shift}' not found.` });
+      continue;
+    }
+
+    // Parse Departments
+    const deptNames = deptString
+      .split(",")
+      .map((d) => d.trim().toLowerCase())
+      .filter(Boolean);
+    const departmentIds = deptNames.map((d) => deptMap.get(d)).filter(Boolean);
+
+    // Reporting Manager Resolution (Matching createUser)
+    let resolvedReportingManager = undefined;
+    if (matchedRoleObj.name === "admin") {
+      resolvedReportingManager = superUser ? superUser._id : undefined;
+    } else if (matchedRoleObj.name !== "super") {
+      resolvedReportingManager = adminUser ? adminUser._id : undefined;
+    }
+
+    // Mark as checked
+    emailsInCSV.add(email);
+    if (empCode) existingEmpCodes.add(empCode.toLowerCase());
+
+    validUsersToCreate.push({
+      originalRow: row,
+      payload: {
+        name,
+        email,
+        phone,
+        employeeCode: empCode || undefined,
+        department: departmentIds.length > 0 ? departmentIds : undefined,
+        role: matchedRoleObj._id,
+        reportingManager: resolvedReportingManager,
+        assignShift: shiftId,
+        password,
+        isActive: true,
+        isEmailNotificationEnabled: false,
+        mainEmailType: "email",
+      },
+    });
+  }
+
+  // 4. Safe Creation with SrNo Pre-calculation
+  const createdUsers = [];
+  const lastUser = await User.findOne({}, {}, { sort: { srNo: -1 } });
+  let nextSrNo = lastUser && lastUser.srNo ? lastUser.srNo + 1 : 1;
+
+  for (const item of validUsersToCreate) {
+    try {
+      // 🟢 Assign next explicit srNo to avoid Duplicate E11000 Error on Save Hook
+      item.payload.srNo = nextSrNo++;
+      
+      const newUser = await User.create(item.payload);
+      createdUsers.push(newUser);
+
+      // Async Log
+      createLog({
+        action: "CREATE",
+        module: "USER",
+        documentId: newUser._id,
+        performedBy: req.cookies?.userId || req.user?._id || null,
+        newData: newUser,
+        message: "User created via CSV import",
+      }).catch((e) => console.error("Log error:", e.message));
+
+    } catch (dbErr) {
+      let dbErrorMsg = dbErr.message || "Failed to create user.";
+      if (dbErr.code === 11000) {
+        const field = Object.keys(dbErr.keyPattern || {})[0] || "index";
+        dbErrorMsg = `Duplicate entry error on field '${field}' in database.`;
+      }
+      errorRows.push({
+        ...item.originalRow,
+        "Error Reason": dbErrorMsg,
+      });
+    }
+  }
+
+  res.status(201).json({
+    status: "success",
+    data: {
+      validCount: createdUsers.length,
+      errorCount: errorRows.length,
+      errorRows,
+    },
+    message: `${createdUsers.length} user(s) registered successfully`,
   });
 });

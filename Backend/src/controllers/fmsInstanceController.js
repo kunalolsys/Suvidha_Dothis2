@@ -6,7 +6,10 @@ import FmsTask from "../models/FmsTask.js";
 import User from "../models/User.js";
 import { handleAsync } from "../utils/handleAsync.js";
 import AppError from "../utils/AppError.js";
-import fmsDateCalculator, { calculateCalendarDurationWithShiftSnap, parseFrequencyToHours } from "../utils/fmsDateCalculator.js";
+import fmsDateCalculator, {
+  calculateCalendarDurationWithShiftSnap,
+  parseFrequencyToHours,
+} from "../utils/fmsDateCalculator.js";
 import {
   addWorkingDaysHoliday,
   isHoliday,
@@ -41,16 +44,13 @@ export const launchFmsInstance = handleAsync(async (req, res, next) => {
   const { launchDate: launchDateStr, endDate } = req.body;
 
   const userId = req.cookies?.userId || req.user?._id || null;
-  const template = await FmsTemplate.findById(templateId).populate([
-    "manager",
-    "srManager",
-  ]);
+  const template = await FmsTemplate.findById(templateId);
   if (!template) return next(new AppError("Template not found", 404));
 
   const taskCount = await FmsTask.countDocuments({ fmsTemplateId: templateId });
   if (taskCount === 0) {
     return next(
-      new AppError("Cannot launch FMS: No tasks found in this template", 400)
+      new AppError("Cannot launch FMS: No tasks found in this template", 400),
     );
   }
 
@@ -81,7 +81,7 @@ export const launchFmsInstance = handleAsync(async (req, res, next) => {
     launchDateValidation > parsedEndDateValidation
   ) {
     return next(
-      new AppError("Launch date cannot be greater than end date", 400)
+      new AppError("Launch date cannot be greater than end date", 400),
     );
   }
 
@@ -91,7 +91,7 @@ export const launchFmsInstance = handleAsync(async (req, res, next) => {
   const counter = await Counter.findOneAndUpdate(
     { _id: "fms_instance" },
     { $inc: { seq: 1 } },
-    { upsert: true, new: true }
+    { upsert: true, new: true },
   );
 
   const sequence = String(counter.seq).padStart(5, "0");
@@ -105,8 +105,8 @@ export const launchFmsInstance = handleAsync(async (req, res, next) => {
     instanceName: `${template.templateName}`,
     startDate: instanceStartDate,
     endDate: instanceEndDate,
-    manager: template.manager._id,
-    srManager: template.srManager?._id || null,
+    // manager: template.manager._id,
+    // srManager: template.srManager?._id || null,
     createdBy: userId,
     fmsDuration: template.fmsDuration,
     status,
@@ -114,7 +114,7 @@ export const launchFmsInstance = handleAsync(async (req, res, next) => {
 
   // Fetch Template Tasks in sequential order
   const templateTasks = await FmsTask.find({ fmsTemplateId: templateId }).sort(
-    "taskId"
+    "taskId",
   );
   const instanceTasks = [];
 
@@ -132,12 +132,12 @@ export const launchFmsInstance = handleAsync(async (req, res, next) => {
     const prevTasks = instanceTasks.slice(0, i);
 
     console.log(
-      `${i + 1}. ${tmplTask.taskId}: ${tmplTask.frequency} x=${tmplTask.xValue} dep=${tmplTask.dependentOn}`
+      `${i + 1}. ${tmplTask.taskId}: ${tmplTask.frequency} x=${tmplTask.xValue} dep=${tmplTask.dependentOn}`,
     );
 
     // Fetch assigned Doer
     const doer = await User.findById(tmplTask.assignedTo).populate(
-      "assignShift"
+      "assignShift",
     );
 
     if (!doer || !doer.assignShift) {
@@ -164,7 +164,7 @@ export const launchFmsInstance = handleAsync(async (req, res, next) => {
 
     if (tmplTask.isDependent && isRecurringParent) {
       console.log(
-        `⏭️ Skipping ${tmplTask.taskId} because parent ${parentTemplate.taskId} is recurring`
+        `⏭️ Skipping ${tmplTask.taskId} because parent ${parentTemplate.taskId} is recurring`,
       );
       continue;
     }
@@ -177,7 +177,7 @@ export const launchFmsInstance = handleAsync(async (req, res, next) => {
       const isWorking = await isWorkingDay(
         taskStartDate,
         doer.assignShift,
-        taskDeptContext
+        taskDeptContext,
       );
       const isHoli = await isHoliday(taskStartDate, taskDeptContext);
       const shiftEnd = snapToShiftTime(taskStartDate, doer.assignShift, false);
@@ -192,19 +192,19 @@ export const launchFmsInstance = handleAsync(async (req, res, next) => {
           nextDay,
           doer.assignShift._id,
           {},
-          taskDeptContext
+          taskDeptContext,
         );
 
         taskStartDate = snapToShiftTime(
           nextWorkingShift,
           doer.assignShift,
-          true
+          true,
         );
       }
 
       const freqParsed = parseFrequencyToHours(
         tmplTask.frequency,
-        tmplTask.xValue
+        tmplTask.xValue,
       );
 
       let dueDate;
@@ -215,14 +215,14 @@ export const launchFmsInstance = handleAsync(async (req, res, next) => {
           doer.assignShift._id,
           false,
           {},
-          taskDeptContext
+          taskDeptContext,
         );
       } else {
         dueDate = await calculateCalendarDurationWithShiftSnap(
           taskStartDate,
           freqParsed,
           doer.assignShift._id,
-          taskDeptContext
+          taskDeptContext,
         );
       }
 
@@ -237,7 +237,7 @@ export const launchFmsInstance = handleAsync(async (req, res, next) => {
         launchDate,
         doer.assignShift._id,
         {},
-        taskDeptContext
+        taskDeptContext,
       );
 
       const dueDate = snapToShiftTime(shiftStart, doer.assignShift, false);
@@ -251,7 +251,7 @@ export const launchFmsInstance = handleAsync(async (req, res, next) => {
         launchDate,
         doer.assignShift._id,
         {},
-        taskDeptContext
+        taskDeptContext,
       );
 
       let dueDate = parsedEndDate;
@@ -272,7 +272,7 @@ export const launchFmsInstance = handleAsync(async (req, res, next) => {
       const isWorking = await isWorkingDay(
         taskStartDate,
         doer.assignShift,
-        taskDeptContext
+        taskDeptContext,
       );
       const isHoli = await isHoliday(taskStartDate, taskDeptContext);
       const shiftEnd = snapToShiftTime(taskStartDate, doer.assignShift, false);
@@ -287,19 +287,19 @@ export const launchFmsInstance = handleAsync(async (req, res, next) => {
           nextDay,
           doer.assignShift._id,
           {},
-          taskDeptContext
+          taskDeptContext,
         );
 
         taskStartDate = snapToShiftTime(
           nextWorkingShift,
           doer.assignShift,
-          true
+          true,
         );
       }
 
       const freqParsed = parseFrequencyToHours(
         tmplTask.frequency,
-        tmplTask.xValue
+        tmplTask.xValue,
       );
 
       let dueDate;
@@ -310,14 +310,14 @@ export const launchFmsInstance = handleAsync(async (req, res, next) => {
           doer.assignShift._id,
           false,
           {},
-          taskDeptContext
+          taskDeptContext,
         );
       } else {
         dueDate = await calculateCalendarDurationWithShiftSnap(
           taskStartDate,
           freqParsed,
           doer.assignShift._id,
-          taskDeptContext
+          taskDeptContext,
         );
       }
 
@@ -330,7 +330,7 @@ export const launchFmsInstance = handleAsync(async (req, res, next) => {
     else if (!tmplTask.isDependent && freq.startsWith("event")) {
       if (!parsedEndDate) {
         throw new Error(
-          `Event based task "${tmplTask.taskId}" requires FMS End Date`
+          `Event based task "${tmplTask.taskId}" requires FMS End Date`,
         );
       }
 
@@ -339,7 +339,7 @@ export const launchFmsInstance = handleAsync(async (req, res, next) => {
       const isWorking = await isWorkingDay(
         taskStartDate,
         doer.assignShift,
-        taskDeptContext
+        taskDeptContext,
       );
       const isHoli = await isHoliday(taskStartDate, taskDeptContext);
       const shiftEnd = snapToShiftTime(taskStartDate, doer.assignShift, false);
@@ -354,19 +354,19 @@ export const launchFmsInstance = handleAsync(async (req, res, next) => {
           nextDay,
           doer.assignShift._id,
           {},
-          taskDeptContext
+          taskDeptContext,
         );
 
         taskStartDate = snapToShiftTime(
           nextWorkingShift,
           doer.assignShift,
-          true
+          true,
         );
       }
 
       const freqParsed = parseFrequencyToHours(
         tmplTask.frequency,
-        tmplTask.xValue
+        tmplTask.xValue,
       );
 
       let dueDate;
@@ -377,14 +377,14 @@ export const launchFmsInstance = handleAsync(async (req, res, next) => {
           doer.assignShift._id,
           false,
           {},
-          taskDeptContext
+          taskDeptContext,
         );
       } else {
         dueDate = await calculateCalendarDurationWithShiftSnap(
           parsedEndDate,
           freqParsed,
           doer.assignShift._id,
-          taskDeptContext
+          taskDeptContext,
         );
       }
 
@@ -399,9 +399,9 @@ export const launchFmsInstance = handleAsync(async (req, res, next) => {
       tmplTask.dependentOn &&
       tmplTask.startTimeSetting === "planned-to-planned"
     ) {
-      const parentTask = prevTasks.find(
-        (t) => t.taskId === tmplTask.dependentOn
-      ) || templateTasks.find((t) => t.taskId === tmplTask.dependentOn);
+      const parentTask =
+        prevTasks.find((t) => t.taskId === tmplTask.dependentOn) ||
+        templateTasks.find((t) => t.taskId === tmplTask.dependentOn);
 
       let taskStartDate = parentTask?.plannedDueDate
         ? new Date(parentTask.plannedDueDate)
@@ -410,7 +410,7 @@ export const launchFmsInstance = handleAsync(async (req, res, next) => {
       const isParentWorkingDay = await isWorkingDay(
         taskStartDate,
         doer.assignShift,
-        taskDeptContext
+        taskDeptContext,
       );
       const isParentHoli = await isHoliday(taskStartDate, taskDeptContext);
       const shiftEnd = snapToShiftTime(taskStartDate, doer.assignShift, false);
@@ -425,19 +425,19 @@ export const launchFmsInstance = handleAsync(async (req, res, next) => {
           nextDay,
           doer.assignShift._id,
           {},
-          taskDeptContext
+          taskDeptContext,
         );
 
         taskStartDate = snapToShiftTime(
           nextWorkingShift,
           doer.assignShift,
-          true
+          true,
         );
       }
 
       const freqParsed = parseFrequencyToHours(
         tmplTask.frequency,
-        tmplTask.xValue
+        tmplTask.xValue,
       );
 
       let dueDate;
@@ -448,14 +448,14 @@ export const launchFmsInstance = handleAsync(async (req, res, next) => {
           doer.assignShift._id,
           false,
           {},
-          taskDeptContext
+          taskDeptContext,
         );
       } else {
         dueDate = await calculateCalendarDurationWithShiftSnap(
           taskStartDate,
           freqParsed,
           doer.assignShift._id,
-          taskDeptContext
+          taskDeptContext,
         );
       }
 
@@ -486,7 +486,7 @@ export const launchFmsInstance = handleAsync(async (req, res, next) => {
           plannedDueDate: t.plannedDueDate,
           plannedStartDate: t.plannedStartDate,
         })),
-        taskDeptContext
+        taskDeptContext,
       );
     }
 
@@ -567,7 +567,7 @@ export const launchFmsInstance = handleAsync(async (req, res, next) => {
     instanceTasks.push(instanceTask);
 
     console.log(
-      `✅ ${instanceTask.taskId} -> start=${instanceTask.plannedStartDate} due=${instanceTask.plannedDueDate} [DecisionStep: ${isDecisionStep}]`
+      `✅ ${instanceTask.taskId} -> start=${instanceTask.plannedStartDate} due=${instanceTask.plannedDueDate} [DecisionStep: ${isDecisionStep}]`,
     );
   }
 
@@ -578,7 +578,7 @@ export const launchFmsInstance = handleAsync(async (req, res, next) => {
     isLaunched: true,
   });
 
-  await instance.populate(["manager", "srManager", "fmsTemplateId"]);
+  await instance.populate(["fmsTemplateId"]);
 
   res.status(201).json({
     success: true,
@@ -730,7 +730,7 @@ export const completeInstanceTask = handleAsync(async (req, res, next) => {
   });
 
   const assignedParentUser = await User.findById(task.assignedTo).populate(
-    "assignShift"
+    "assignShift",
   );
 
   if (!assignedParentUser) {
@@ -741,7 +741,7 @@ export const completeInstanceTask = handleAsync(async (req, res, next) => {
   for (const child of children) {
     try {
       const workShiftUser = await User.findById(child.assignedTo).populate(
-        "assignShift"
+        "assignShift",
       );
       const shift = workShiftUser?.assignShift;
 
@@ -758,7 +758,7 @@ export const completeInstanceTask = handleAsync(async (req, res, next) => {
       const isTodayWorking = await isWorkingDay(
         startDate,
         shift,
-        taskDeptContext
+        taskDeptContext,
       );
       const isTodayHoli = await isHoliday(startDate, taskDeptContext);
       const shiftEnd = snapToShiftTime(startDate, shift, false);
@@ -774,17 +774,14 @@ export const completeInstanceTask = handleAsync(async (req, res, next) => {
           nextDay,
           shift._id,
           {},
-          taskDeptContext
+          taskDeptContext,
         );
 
         startDate = snapToShiftTime(nextWorkingShift, shift, true);
       }
 
       // 🟢 STEP B: Parse Frequency ({ isDay: boolean, value: number })
-      const freqParsed = parseFrequencyToHours(
-        child.frequency,
-        child.xValue
-      );
+      const freqParsed = parseFrequencyToHours(child.frequency, child.xValue);
 
       // 🟢 STEP C: Exact Time Preserving Due Date Calculation
       // Direct calculateCalendarDurationWithShiftSnap pass karein taaki exact time override na ho
@@ -792,7 +789,7 @@ export const completeInstanceTask = handleAsync(async (req, res, next) => {
         startDate,
         freqParsed,
         shift._id,
-        taskDeptContext
+        taskDeptContext,
       );
 
       // 🟢 STEP D: Unlock Child Task & Assign Planned Dates
@@ -805,7 +802,7 @@ export const completeInstanceTask = handleAsync(async (req, res, next) => {
       await child.save();
 
       console.log(
-        `✅ UNLOCKED CHILD FMS TASK ${child.taskId}: Start=${startDate.toISOString()} | Due=${dueDate.toISOString()}`
+        `✅ UNLOCKED CHILD FMS TASK ${child.taskId}: Start=${startDate.toISOString()} | Due=${dueDate.toISOString()}`,
       );
     } catch (err) {
       console.error(`❌ FAILED TO UPDATE CHILD FMS TASK ${child.taskId}:`, err);
@@ -1163,7 +1160,7 @@ export const getFmsInstances = handleAsync(async (req, res) => {
   const [instances, total] = await Promise.all([
     FmsInstance.find(query)
       .populate(
-        "fmsTemplateId manager srManager createdBy",
+        "fmsTemplateId createdBy",
         "templateName fmsId name email",
       )
       .sort({ startDate: -1, createdAt: -1 })
@@ -1236,8 +1233,8 @@ export const getFmsInstancesCount = handleAsync(async (req, res) => {
 //**GET LAUNCHED FMS BY ID */
 export const getFmsInstanceById = handleAsync(async (req, res, next) => {
   const instance = await FmsInstance.findById(req.params.id)
-    .populate("srManager", "name email")
-    .populate("manager", "name email");
+    // .populate("srManager", "name email")
+    // .populate("manager", "name email");
   if (!instance) return next(new AppError("Instance not found", 404));
   res.json({ success: true, data: instance });
 });
