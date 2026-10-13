@@ -150,7 +150,7 @@ const CreateNewFmsTem = () => {
         const managers = users.filter((u) => u.role?.name === "manager");
         const srManagers = users.filter((u) => u.role?.name === "sr._manager");
         const filteredUsers = users.filter((u) =>
-          ["member", "manager", "sr._manager"].includes( u.role?.name),
+          ["member", "manager", "sr._manager"].includes(u.role?.name),
         );
 
         setFilteredUser(filteredUsers);
@@ -682,7 +682,7 @@ const CreateNewFmsTem = () => {
       <CardContent className="">
         <form className="space-y-6" onSubmit={formik.handleSubmit}>
           <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
               <div className="space-y-2">
                 <Label>FMS ID *</Label>
                 <Input

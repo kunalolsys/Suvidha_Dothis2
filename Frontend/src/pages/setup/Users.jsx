@@ -347,7 +347,7 @@ const Users = () => {
           Name: user.name || "N/A",
           Email: user.email || "N/A",
           Phone: user.phone || "-",
-          Department: user.department?.map((d) => d.name).join(", ") || "-",
+          Department: user.department?.name || user.department || "-",
           Role: user.role?.name || "N/A",
           Shift: user.assignShift?.name || "N/A",
           // "Reporting Manager": manager?.name || "N/A",
@@ -545,7 +545,7 @@ const Users = () => {
                     <TableCell>{user.phone}</TableCell>
                     <TableCell>{user.email}</TableCell>
                     <TableCell>
-                      {user.department?.map((d) => d.name).join(", ")}
+                      {user.department?.name || user.department || "—"}
                     </TableCell>
                     {/* <TableCell>{user.reportingManager?.name || ""}</TableCell> */}
                     <TableCell>{user.role?.displayName || ""}</TableCell>

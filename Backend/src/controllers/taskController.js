@@ -863,7 +863,7 @@ export const getAllTasksWithStats = async (req, res) => {
         .lean();
 
       const memberIds = memberUsers
-        .filter((u) => u.role?.name === "Member")
+        .filter((u) => u.role?.name === "Member" || u.role?.name === "Employee")
         .map((u) => u._id);
 
       const allIds = [managerId, ...memberIds];
@@ -2893,7 +2893,7 @@ export const getRoleBasedTasks = handleAsync(async (req, res) => {
         .lean();
 
       const memberIds = memberUsers
-        .filter((u) => u.role?.name === "Member")
+        .filter((u) => u.role?.name === "Member"||u.role?.name === "Employee")
         .map((u) => u._id);
 
       const allIds = [userId, ...memberIds];

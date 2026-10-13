@@ -63,13 +63,12 @@ const userSchema = new mongoose.Schema(
         message: "Phone number must be exactly 10 digits.",
       },
     },
-    department: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "Department",
-        required: false,
-      },
-    ],
+    department: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Department",
+      required: false,
+      default: null,
+    },
     role: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Role",

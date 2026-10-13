@@ -80,9 +80,11 @@ export const getAllUsers = handleAsync(async (req, res, next) => {
 
   // ✅ Department filter
   if (department) {
-    filter.department = {
-      $in: Array.isArray(department) ? department : [department],
-    };
+    if (Array.isArray(department)) {
+      filter.department = { $in: department };
+    } else {
+      filter.department = department;
+    }
   }
 
   // ✅ Assign Shift filter
@@ -160,8 +162,12 @@ export const exportUsers = handleAsync(async (req, res) => {
 
   if (role) filter.role = role;
 
-  if (department && department.length > 0) {
-    filter.department = { $in: department };
+  if (department) {
+    if (Array.isArray(department) && department.length > 0) {
+      filter.department = { $in: department };
+    } else {
+      filter.department = department;
+    }
   }
 
   if (assignShift) filter.assignShift = assignShift;
@@ -209,7 +215,10 @@ export const getAllUserForDrops = handleAsync(async (req, res) => {
 });
 export const getAllFilterUserForDrops = handleAsync(async (req, res) => {
   const userId = req.cookies.userId || req.user._id || null;
-  const loggedInUser = await User.findById(userId).populate("role", "name displayName");
+  const loggedInUser = await User.findById(userId).populate(
+    "role",
+    "name displayName",
+  );
 
   if (!loggedInUser) {
     return res.status(404).json({
@@ -343,6 +352,13 @@ export const createUser = handleAsync(async (req, res, next) => {
     adminUser = await User.findOne({ role: adminRole._id, isDeleted: false });
   }
 
+  let singleDeptId = undefined;
+  if (Array.isArray(department) && department.length > 0) {
+    singleDeptId = department[0];
+  } else if (department && typeof department === "string") {
+    singleDeptId = department;
+  }
+
   const newUser = await User.create({
     name,
     email,
@@ -350,10 +366,7 @@ export const createUser = handleAsync(async (req, res, next) => {
     telegramUserName,
     telegramNotificationsEnabled,
     employeeCode,
-    department:
-      Array.isArray(department) && department.length > 0
-        ? department
-        : undefined,
+    department: singleDeptId,
     role,
     // 🚀 Always set Admin User ID as reportingManager
     reportingManager: adminUser ? adminUser._id : undefined,
@@ -469,7 +482,13 @@ export const updateUser = handleAsync(async (req, res, next) => {
     user.password = password;
   }
 
-  if (department) user.department = department;
+  if (department !== undefined) {
+    if (Array.isArray(department)) {
+      user.department = department.length > 0 ? department[0] : null;
+    } else {
+      user.department = department || null;
+    }
+  }
   // Prevent role change if user is referenced in Task Audience Master
   if (role && String(role) !== String(user.role)) {
     const linkedAudience = await TaskAudienceMaster.findOne({
@@ -620,7 +639,7 @@ export const importUsersCSV = handleAsync(async (req, res, next) => {
     return next(new AppError("CSV file is empty.", 400));
   }
 
-  // 🟢 CLEAN CSV KEYS (Remove UTF-8 BOM mark `﻿` and trim whitespace from Header Keys)
+  // 🟢 CLEAN CSV KEYS (Remove UTF-8 BOM mark `` and trim whitespace from Header Keys)
   const rows = rawRows.map((row) => {
     const cleanRow = {};
     Object.keys(row).forEach((key) => {
@@ -631,28 +650,47 @@ export const importUsersCSV = handleAsync(async (req, res, next) => {
   });
 
   // 2. Pre-fetch Masters
-  const [allRoles, allShifts, allDepartments, existingUsers] = await Promise.all([
-    Role.find({}),
-    WorkShift.find({ isDeleted: false }),
-    Department.find({ isDeleted: false }),
-    User.find({ isDeleted: false }).select("email phone employeeCode role _id"),
-  ]);
+  const [allRoles, allShifts, allDepartments, existingUsers] =
+    await Promise.all([
+      Role.find({}),
+      WorkShift.find({ isDeleted: false }),
+      Department.find({ isDeleted: false }),
+      User.find({ isDeleted: false }).select(
+        "email phone employeeCode role _id",
+      ),
+    ]);
 
   // Lookup Maps (Case-insensitive & Trimmed)
-  const roleMap = new Map(allRoles.map((r) => [r.name.trim().toLowerCase(), r]));
-  const shiftMap = new Map(allShifts.map((s) => [s.name.trim().toLowerCase(), s._id]));
-  const deptMap = new Map(allDepartments.map((d) => [d.name.trim().toLowerCase(), d._id]));
+  const roleMap = new Map(
+    allRoles.map((r) => [r.name.trim().toLowerCase(), r]),
+  );
+  const shiftMap = new Map(
+    allShifts.map((s) => [s.name.trim().toLowerCase(), s._id]),
+  );
+  const deptMap = new Map(
+    allDepartments.map((d) => [d.name.trim().toLowerCase(), d._id]),
+  );
 
   // Standard hierarchy lookup (matching createUser logic)
   const superRole = allRoles.find((r) => r.name.toLowerCase() === "super");
   const adminRole = allRoles.find((r) => r.name.toLowerCase() === "admin");
 
-  const superUser = existingUsers.find((u) => String(u.role) === String(superRole?._id));
-  const adminUser = existingUsers.find((u) => String(u.role) === String(adminRole?._id));
+  const superUser = existingUsers.find(
+    (u) => String(u.role) === String(superRole?._id),
+  );
+  const adminUser = existingUsers.find(
+    (u) => String(u.role) === String(adminRole?._id),
+  );
 
   // Duplicates tracking sets
-  const existingEmails = new Set(existingUsers.map((u) => u.email?.toLowerCase()).filter(Boolean));
-  const existingEmpCodes = new Set(existingUsers.map((u) => u.employeeCode?.trim().toLowerCase()).filter(Boolean));
+  const existingEmails = new Set(
+    existingUsers.map((u) => u.email?.toLowerCase()).filter(Boolean),
+  );
+  const existingEmpCodes = new Set(
+    existingUsers
+      .map((u) => u.employeeCode?.trim().toLowerCase())
+      .filter(Boolean),
+  );
 
   const emailsInCSV = new Set();
   const validUsersToCreate = [];
@@ -673,7 +711,8 @@ export const importUsersCSV = handleAsync(async (req, res, next) => {
 
     // 🟢 Exact createUser validations
     if (!name || !email || !phone || !password) {
-      errorReason = "Please provide all required fields (Name, Email, Phone, Password).";
+      errorReason =
+        "Please provide all required fields (Name, Email, Phone, Password).";
     } else if (empCode && existingEmpCodes.has(empCode.toLowerCase())) {
       errorReason = `Employee code '${empCode}' already exists in system.`;
     } else if (emailsInCSV.has(email) || existingEmails.has(email)) {
@@ -690,20 +729,23 @@ export const importUsersCSV = handleAsync(async (req, res, next) => {
     const shiftId = shiftMap.get(shiftName);
 
     if (!matchedRoleObj) {
-      errorRows.push({ ...row, "Error Reason": `Role '${row.Role}' not found.` });
+      errorRows.push({
+        ...row,
+        "Error Reason": `Role '${row.Role}' not found.`,
+      });
       continue;
     }
     if (!shiftId) {
-      errorRows.push({ ...row, "Error Reason": `Shift '${row.Shift}' not found.` });
+      errorRows.push({
+        ...row,
+        "Error Reason": `Shift '${row.Shift}' not found.`,
+      });
       continue;
     }
 
-    // Parse Departments
-    const deptNames = deptString
-      .split(",")
-      .map((d) => d.trim().toLowerCase())
-      .filter(Boolean);
-    const departmentIds = deptNames.map((d) => deptMap.get(d)).filter(Boolean);
+    // Parse Departments (Single ObjectId mapping)
+    const firstDeptName = deptString.split(",")[0]?.trim().toLowerCase();
+    const singleDeptId = firstDeptName ? deptMap.get(firstDeptName) : undefined;
 
     // Reporting Manager Resolution (Matching createUser)
     let resolvedReportingManager = undefined;
@@ -724,7 +766,7 @@ export const importUsersCSV = handleAsync(async (req, res, next) => {
         email,
         phone,
         employeeCode: empCode || undefined,
-        department: departmentIds.length > 0 ? departmentIds : undefined,
+        department: singleDeptId,
         role: matchedRoleObj._id,
         reportingManager: resolvedReportingManager,
         assignShift: shiftId,
@@ -745,7 +787,7 @@ export const importUsersCSV = handleAsync(async (req, res, next) => {
     try {
       // 🟢 Assign next explicit srNo to avoid Duplicate E11000 Error on Save Hook
       item.payload.srNo = nextSrNo++;
-      
+
       const newUser = await User.create(item.payload);
       createdUsers.push(newUser);
 
@@ -758,7 +800,6 @@ export const importUsersCSV = handleAsync(async (req, res, next) => {
         newData: newUser,
         message: "User created via CSV import",
       }).catch((e) => console.error("Log error:", e.message));
-
     } catch (dbErr) {
       let dbErrorMsg = dbErr.message || "Failed to create user.";
       if (dbErr.code === 11000) {

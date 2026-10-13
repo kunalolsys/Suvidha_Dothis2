@@ -54,7 +54,7 @@ const CreateTaskForm = ({
 
   // Form States
   const [date, setDate] = useState();
-  const [startDate, setStartDate] = useState(); // Global Start Date (Used when 1 Department is selected)
+  const [startDate, setStartDate] = useState();
   const [taskEndDateOffset, setTaskEndDateOffset] = useState("1");
   const [isDependent, setIsDependent] = useState(false);
   const [parentTask, setParentTask] = useState("");
@@ -82,10 +82,9 @@ const CreateTaskForm = ({
   const [loading, setLoading] = useState(false);
   const [isFormCollapsed, setIsFormCollapsed] = useState(false);
 
-  // 🟢 Dynamic Rows: Each row carries its own Department, Users, and specific StartDate
+  // 🟢 Dynamic Rows: Contains selected users and their row-specific start date
   const [assignmentRows, setAssignmentRows] = useState([
     {
-      departmentId: "",
       users: [],
       startDate: null,
     },
@@ -148,7 +147,6 @@ const CreateTaskForm = ({
   const selectedUsers = assignmentRows.flatMap((r) => r.users || []);
 
   const addAssignmentRow = () => {
-    const selectedUsers = assignmentRows.flatMap((r) => r.users || []);
     const availableUsers = users.filter((u) => !selectedUsers.includes(u._id));
 
     if (availableUsers.length === 0) {
@@ -156,44 +154,12 @@ const CreateTaskForm = ({
       return;
     }
 
-    setAssignmentRows((prev) => [
-      ...prev,
-      { departmentId: "", users: [], startDate: null },
-    ]);
-  };
-
-  const isDepartmentFullySelected = (deptId) => {
-    const deptUsers = users.filter(
-      (u) =>
-        Array.isArray(u.department) &&
-        u.department.some((d) => d?._id === deptId),
-    );
-
-    const selectedUsers = assignmentRows
-      .filter((r) => r.departmentId === deptId)
-      .flatMap((r) => r.users || []);
-
-    return deptUsers.length > 0 && selectedUsers.length >= deptUsers.length;
+    setAssignmentRows((prev) => [...prev, { users: [], startDate: null }]);
   };
 
   const removeAssignmentRow = (index) => {
     if (assignmentRows.length === 1) return;
     setAssignmentRows((prev) => prev.filter((_, i) => i !== index));
-  };
-
-  const updateDepartment = (index, departmentId) => {
-    setAssignmentRows((prev) =>
-      prev.map((row, i) =>
-        i === index
-          ? {
-              ...row,
-              departmentId,
-              users: [],
-              startDate: null,
-            }
-          : row,
-      ),
-    );
   };
 
   const updateUsers = (index, newUsers) => {
@@ -236,26 +202,17 @@ const CreateTaskForm = ({
 
     // Validate rows
     for (const [idx, row] of assignmentRows.entries()) {
-      if (!row.departmentId) {
-        toast.error(`Please select department for Row ${idx + 1}`);
-        return;
-      }
       if (row.users.length === 0) {
         toast.error(`Please select users for Row ${idx + 1}`);
         return;
       }
 
-      // Check per-department Start Date if multiple departments are added
       if (!isDependent && isMultiDept && !row.startDate) {
-        const deptObj = departments.find((d) => d._id === row.departmentId);
-        toast.error(
-          `Please select Start Date for ${deptObj?.name || `Row ${idx + 1}`}`,
-        );
+        toast.error(`Please select Start Date for Row ${idx + 1}`);
         return;
       }
     }
 
-    // Check single Start Date if only 1 department is selected
     if (!isDependent && !isMultiDept && !startDate) {
       toast.error("Start Date is required.");
       return;
@@ -285,96 +242,109 @@ const CreateTaskForm = ({
 
     try {
       for (const row of assignmentRows) {
-        if (!row.departmentId || row.users.length === 0) continue;
+        if (row.users.length === 0) continue;
 
-        const formData = new FormData();
+        // 🟢 Group users by their linked Department ID automatically
+        const usersByDept = {};
+        row.users.forEach((userId) => {
+          const uObj = users.find((u) => u._id === userId);
+          const deptId = uObj?.department?._id || uObj?.department || "no_dept";
+          if (!usersByDept[deptId]) usersByDept[deptId] = [];
+          usersByDept[deptId].push(userId);
+        });
 
-        formData.append("assignedTo", JSON.stringify(row.users));
-        formData.append("departmentOfAssignToUser", row.departmentId);
-        formData.append("title", title.trim());
-        formData.append("description", description.trim());
+        // 🟢 Create task payload per department group as expected by backend
+        for (const [deptId, deptUsers] of Object.entries(usersByDept)) {
+          const formData = new FormData();
 
-        // 🟢 Pick row-specific date for multi-dept, or single global date for single dept
-        const effectiveStartDate = isMultiDept ? row.startDate : startDate;
+          formData.append("assignedTo", JSON.stringify(deptUsers));
+          if (deptId !== "no_dept") {
+            formData.append("departmentOfAssignToUser", deptId);
+          }
+          formData.append("title", title.trim());
+          formData.append("description", description.trim());
 
-        if (effectiveStartDate) {
-          formData.append("startDate", effectiveStartDate);
-        } else {
-          const todayStr = new Date().toLocaleDateString("en-CA");
-          formData.append("startDate", todayStr);
-        }
+          const effectiveStartDate = isMultiDept ? row.startDate : startDate;
 
-        if (!isRecurrent && taskEndDateOffset) {
-          formData.append("taskEndDays", taskEndDateOffset);
-        }
-        if (!isRecurrent && taskEndTime) {
-          formData.append("taskEndTime", taskEndTime);
-        }
+          if (effectiveStartDate) {
+            formData.append("startDate", effectiveStartDate);
+          } else {
+            const todayStr = new Date().toLocaleDateString("en-CA");
+            formData.append("startDate", todayStr);
+          }
 
-        if (checklist.length > 0) {
-          formData.append("checklist", JSON.stringify(checklist));
-        }
+          if (!isRecurrent && taskEndDateOffset) {
+            formData.append("taskEndDays", taskEndDateOffset);
+          }
+          if (!isRecurrent && taskEndTime) {
+            formData.append("taskEndTime", taskEndTime);
+          }
 
-        if (attachmentFile && attachmentFile.length > 0) {
-          attachmentFile.forEach((file) => {
-            formData.append("attachmentFile", file);
+          if (checklist.length > 0) {
+            formData.append("checklist", JSON.stringify(checklist));
+          }
+
+          if (attachmentFile && attachmentFile.length > 0) {
+            attachmentFile.forEach((file) => {
+              formData.append("attachmentFile", file);
+            });
+          }
+
+          formData.append("isRecurrent", String(isRecurrent));
+
+          if (isRecurrent) {
+            if (recurrenceFrequency) {
+              formData.append(
+                "frequency",
+                frequencyMap[recurrenceFrequency] || recurrenceFrequency,
+              );
+            }
+
+            if (
+              recurrenceFrequency === "weekly" &&
+              weeklyRecurrenceDays.length > 0
+            ) {
+              formData.append("weekDays", JSON.stringify(weeklyRecurrenceDays));
+            }
+            if (recurrenceFrequency === "bi-weekly") {
+              formData.append("weekStartDay", weeklyTwiceRecurrenceDay);
+              formData.append("repeatAfter", repeatAfter);
+            }
+            if (recurrenceEndDate) {
+              formData.append("recurrenceEndDate", recurrenceEndDate);
+            }
+          }
+
+          formData.append("isDependent", String(isDependent));
+
+          if (isDependent) {
+            if (parentTask) formData.append("parentTask", parentTask);
+            if (startTimeSetting)
+              formData.append("startTimeSetting", startTimeSetting);
+            if (frequencyType) {
+              formData.append(
+                "isDependentFrequency",
+                frequencyType === "days" ? "T+X in days" : "T-X in hours",
+              );
+            }
+            if (xValue !== "") formData.append("xValue", xValue);
+
+            if (startTimeSetting === "actual-to-planned") {
+              formData.delete("startDate");
+            }
+          }
+
+          await api.post("/tasks", formData, {
+            headers: {
+              "Content-Type": "multipart/form-data",
+            },
           });
         }
-
-        formData.append("isRecurrent", String(isRecurrent));
-
-        if (isRecurrent) {
-          if (recurrenceFrequency) {
-            formData.append(
-              "frequency",
-              frequencyMap[recurrenceFrequency] || recurrenceFrequency,
-            );
-          }
-
-          if (
-            recurrenceFrequency === "weekly" &&
-            weeklyRecurrenceDays.length > 0
-          ) {
-            formData.append("weekDays", JSON.stringify(weeklyRecurrenceDays));
-          }
-          if (recurrenceFrequency === "bi-weekly") {
-            formData.append("weekStartDay", weeklyTwiceRecurrenceDay);
-            formData.append("repeatAfter", repeatAfter);
-          }
-          if (recurrenceEndDate) {
-            formData.append("recurrenceEndDate", recurrenceEndDate);
-          }
-        }
-
-        formData.append("isDependent", String(isDependent));
-
-        if (isDependent) {
-          if (parentTask) formData.append("parentTask", parentTask);
-          if (startTimeSetting)
-            formData.append("startTimeSetting", startTimeSetting);
-          if (frequencyType) {
-            formData.append(
-              "isDependentFrequency",
-              frequencyType === "days" ? "T+X in days" : "T-X in hours",
-            );
-          }
-          if (xValue !== "") formData.append("xValue", xValue);
-
-          if (startTimeSetting === "actual-to-planned") {
-            formData.delete("startDate");
-          }
-        }
-
-        await api.post("/tasks", formData, {
-          headers: {
-            "Content-Type": "multipart/form-data",
-          },
-        });
       }
 
       // RESET FORM
       setTitle("");
-      setAssignmentRows([{ departmentId: "", users: [], startDate: null }]);
+      setAssignmentRows([{ users: [], startDate: null }]);
       setDescription("");
       setDate(null);
       setStartDate(null);
@@ -451,60 +421,26 @@ const CreateTaskForm = ({
                 />
               </div>
 
-              {/* Dynamic Department/User Rows */}
+              {/* Dynamic User Rows (Department Dropdown Hidden) */}
               {assignmentRows.map((row, index) => {
-                const filteredUsers = users.filter((u) => {
-                  const inDepartment =
-                    Array.isArray(u.department) &&
-                    u.department.some((d) => d?._id === row.departmentId);
-
-                  const alreadySelectedElsewhere =
-                    selectedUsers.includes(u._id) && !row.users.includes(u._id);
-
-                  return inDepartment && !alreadySelectedElsewhere;
+                // 🟢 Show all available users (excluding users selected in other rows)
+                const availableUsers = users.filter((u) => {
+                  return (
+                    !selectedUsers.includes(u._id) || row.users.includes(u._id)
+                  );
                 });
-
-                const deptObj = departments.find(
-                  (d) => d._id === row.departmentId,
-                );
 
                 return (
                   <div
                     key={index}
                     className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end border rounded-xl p-4 bg-slate-50 relative"
                   >
-                    {/* Department */}
+                    {/* Users Dropdown */}
                     <div
                       className={
                         isMultiDepartment && !isDependent
-                          ? "md:col-span-3 space-y-2"
-                          : "md:col-span-4 space-y-2"
-                      }
-                    >
-                      <Label>
-                        Department <span className="text-red-500">*</span>
-                      </Label>
-                      <AntdSelect
-                        showSearch
-                        placeholder="Select Department"
-                        value={row.departmentId || undefined}
-                        onChange={(value) => updateDepartment(index, value)}
-                        style={{ width: "100%", minHeight: 38 }}
-                        optionFilterProp="label"
-                        options={departments.map((d) => ({
-                          value: d._id,
-                          label: d.name,
-                          disabled: isDepartmentFullySelected(d._id),
-                        }))}
-                      />
-                    </div>
-
-                    {/* Users */}
-                    <div
-                      className={
-                        isMultiDepartment && !isDependent
-                          ? "md:col-span-4 space-y-2"
-                          : "md:col-span-6 space-y-2"
+                          ? "md:col-span-7 space-y-2"
+                          : "md:col-span-10 space-y-2"
                       }
                     >
                       <Label>
@@ -513,29 +449,26 @@ const CreateTaskForm = ({
                       <AntdSelect
                         mode="multiple"
                         showSearch
-                        placeholder={`Select Users (${filteredUsers.length})`}
+                        placeholder={`Select Users (${availableUsers.length})`}
                         value={row.users}
                         onChange={(values) => updateUsers(index, values)}
-                        disabled={!row.departmentId}
                         style={{ width: "100%", minHeight: 38 }}
                         optionFilterProp="label"
-                        options={filteredUsers.map((u) => ({
+                        options={availableUsers.map((u) => ({
                           value: u._id,
                           label: `${u.name || u.email}`,
                         }))}
                       />
                     </div>
 
-                    {/* 🟢 DYNAMIC PER-DEPARTMENT START DATE (Only visible when >1 departments are added) */}
+                    {/* 🟢 DYNAMIC PER-ROW START DATE (Visible when multiple user rows are added) */}
                     {isMultiDepartment && !isDependent && (
                       <div className="md:col-span-3 space-y-2">
                         <Label className="text-xs text-blue-700 font-semibold flex items-center gap-1">
                           <CalendarIcon className="w-3.5 h-3.5 text-blue-600" />
-                          Start Date ({deptObj?.name || "Dept"}){" "}
-                          <span className="text-red-500">*</span>
+                          Start Date <span className="text-red-500">*</span>
                         </Label>
                         <DatePicker
-                          disabled={!row.departmentId}
                           className="w-full h-10 hover:shadow-md transition-all duration-200"
                           format="DD MMM YYYY"
                           value={row.startDate ? dayjs(row.startDate) : null}
@@ -548,36 +481,6 @@ const CreateTaskForm = ({
                             const selected = dayjs(date);
                             const selectedDateStr =
                               selected.format("YYYY-MM-DD");
-
-                            // 1. Holiday Check
-                            if (
-                              isHolidayForDept(
-                                selectedDateStr,
-                                row.departmentId,
-                              )
-                            ) {
-                              toast.error(
-                                `Selected date is a holiday for ${deptObj?.name || "this department"}. Please select another date.`,
-                              );
-                              updateRowStartDate(index, null);
-                              return;
-                            }
-
-                            // 2. Working Day Check
-                            const dayName = selected
-                              .format("dddd")
-                              .toLowerCase();
-                            const activeSchedule = getDeptWorkingSchedule(
-                              row.departmentId,
-                            );
-
-                            if (!activeSchedule?.[dayName]) {
-                              toast.error(
-                                `Selected day (${dayName}) is not a working day for ${deptObj?.name}.`,
-                              );
-                              updateRowStartDate(index, null);
-                              return;
-                            }
 
                             updateRowStartDate(index, selectedDateStr);
                           }}
@@ -615,7 +518,7 @@ const CreateTaskForm = ({
                   className="w-full border-dashed"
                 >
                   <Plus className="w-4 h-4 mr-2" />
-                  Add Another Department
+                  Add Another Assignee Group
                 </Button>
               )}
             </div>
@@ -746,7 +649,7 @@ const CreateTaskForm = ({
             {/* Conditional Date / Dependency Fields */}
             {!isDependent ? (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {/* 🟢 Standard Single Start Date Picker (Only visible when 1 Department is selected) */}
+                {/* Standard Single Start Date Picker (Only visible when 1 Row is added) */}
                 {!isMultiDepartment && (
                   <div className="space-y-2">
                     <Label>
@@ -764,29 +667,6 @@ const CreateTaskForm = ({
 
                         const selected = dayjs(date);
                         const selectedDate = selected.format("YYYY-MM-DD");
-                        const primaryDeptId = assignmentRows[0]?.departmentId;
-
-                        // Check Holiday
-                        if (isHolidayForDept(selectedDate, primaryDeptId)) {
-                          toast.error(
-                            `Selected date is a holiday for your department. Please select another date.`,
-                          );
-                          setStartDate(null);
-                          return;
-                        }
-
-                        // Check Working Day
-                        const dayName = selected.format("dddd").toLowerCase();
-                        const activeSchedule =
-                          getDeptWorkingSchedule(primaryDeptId);
-
-                        if (!activeSchedule?.[dayName]) {
-                          toast.error(
-                            `Selected day (${dayName}) is not a working day for the assigned department.`,
-                          );
-                          setStartDate(null);
-                          return;
-                        }
 
                         setStartDate(selectedDate);
                       }}

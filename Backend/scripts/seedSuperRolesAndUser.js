@@ -240,17 +240,17 @@ async function main() {
     });
 
     const dmRole = await ensureRole({
-      name: "dm",
-      displayName: "DM",
+      name: "delegator",
+      displayName: "Delegator",
       permissions: [],
       isFullAccess: false, // 🟢 Single-time create hone ke baad DB me jo bhi save / assign hoga, woh safe rahega!
     });
 
     const memberRole = await ensureRole({
-      name: "member",
-      displayName: "Member",
+      name: "employee",
+      displayName: "Employee",
       permissions: [],
-      isFullAccess: false, // 🟢 Same for Member
+      isFullAccess: false, // 🟢 Same for Employee
     });
 
     // 4. Ensure Organizational Defaults
@@ -293,11 +293,11 @@ async function main() {
 
     // 7. Seed Remaining Users
     await ensureUser({
-      employeeCode: "DM001",
-      name: "DM User",
-      email: "dm@dothis2.com",
+      employeeCode: "DELEGATOR001",
+      name: "Delegator User",
+      email: "delegator@dothis2.com",
       phone: "1234567812",
-      password: "DMUser@123",
+      password: "Delegator@123",
       roleId: dmRole._id,
       assignShift,
       departmentIds,
@@ -305,11 +305,11 @@ async function main() {
     });
 
     await ensureUser({
-      employeeCode: "MEMBER001",
-      name: "Member User",
-      email: "member@dothis2.com",
+      employeeCode: "EMPLOYEE001",
+      name: "Employee User",
+      email: "employee@dothis2.com",
       phone: "1234567813",
-      password: "Member@123",
+      password: "Employee@123",
       roleId: memberRole._id,
       assignShift,
       departmentIds,

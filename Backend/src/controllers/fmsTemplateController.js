@@ -13,64 +13,49 @@ import { Parser } from "json2csv";
 import Role from "../models/Role.js";
 import OpenForm from "../models/OpenForm.js";
 export const createTemplate = handleAsync(async (req, res, next) => {
-  const {
-    templateName,
-    description,
-    fmsDuration,
-    endDate,
-    // manager,
-    // srManager,
-  } = req.body;
-  const userId = req.cookies.userId || req.user._id || null;
+  const { templateName, description, fmsDuration, endDate } = req.body;
 
-  // Check duplicate templateName (Mongo unique will catch but custom msg better)
+  const userId = req.cookies?.userId || req.user?._id || null;
+
+  // 1. Check duplicate templateName
   const existing = await FmsTemplate.findOne({
     templateName,
     isDeleted: false,
   });
+
   if (existing) {
     return next(new AppError(`Template "${templateName}" already exists`, 400));
   }
 
-  // Role validation (BRD)
-  // const managerUser = await User.findById(manager)
-  //   .populate("role")
-  //   .populate("assignShift");
-  // if (!managerUser || managerUser.role.name !== "manager") {
-  //   return next(new AppError("Manager must have Manager role", 400));
-  // }
-  // if (srManager) {
-  //   const srUser = await User.findById(srManager).populate("role");
-  //   if (!srUser || srUser.role.name !== "sr._manager") {
-  //     return next(new AppError("Sr Manager must have Sr Manager role", 400));
-  //   }
-  // }
-  let templateEndDate = endDate;
+  // 2. Fixed Period Date Sanitization (Without Manager Shift Dependency)
+  let templateEndDate = undefined;
 
-  if (fmsDuration === "Fixed Period" && endDate && managerUser.assignShift) {
-    templateEndDate = snapToShiftTime(
-      new Date(endDate),
-      managerUser.assignShift,
-      false, // false = shift end time
-    );
+  if (fmsDuration === "Fixed Period") {
+    if (!endDate) {
+      return next(
+        new AppError("End Date is required for Fixed Period templates", 400),
+      );
+    }
+
+    // Set End Date to the end of that day (23:59:59.999)
+    const end = new Date(endDate);
+    end.setHours(23, 59, 59, 999);
+    templateEndDate = end;
   }
+
+  // 3. Create FMS Template Document
   const template = await FmsTemplate.create({
     templateName,
     description: description || "",
     fmsDuration,
-    endDate: fmsDuration === "Fixed Period" ? templateEndDate : undefined,
-    // manager: managerUser._id,
-    // srManager: srManager || undefined,
+    endDate: templateEndDate,
     user: userId,
   });
 
-  await template.populate([
-    // "manager",
-    // "srManager",
-    "taskCount",
-    "instanceCount",
-  ]);
+  // 4. Populate Virtuals
+  await template.populate(["taskCount", "instanceCount"]);
 
+  // 5. System Audit Log
   await createLog({
     action: "CREATE_TEMPLATE",
     module: "FMS_TEMPLATE",
@@ -239,7 +224,11 @@ export const getTemplates = handleAsync(async (req, res) => {
   if (userRole === "admin" || userRole === "pc") {
     // ✅ ADMIN / PC sees ALL templates across the organization.
     // No filter.user constraint needed.
-  } else if (userRole === "sr. manager" || userRole === "srmanager" || userRole === "sr._manager") {
+  } else if (
+    userRole === "sr. manager" ||
+    userRole === "srmanager" ||
+    userRole === "sr._manager"
+  ) {
     // Sr. Manager sees templates created by themselves or Managers reporting to them / in manager role
     const managerRole = await Role.findOne({ name: "manager" })
       .select("_id")
@@ -350,7 +339,11 @@ export const getTemplatesForDropdown = handleAsync(async (req, res) => {
   // =========================
   if (userRole === "admin" || userRole === "pc") {
     // ✅ ADMIN / PC sees ALL available (unlinked) templates across all users
-  } else if (userRole === "sr. manager" || userRole === "srmanager" || userRole === "sr._manager") {
+  } else if (
+    userRole === "sr. manager" ||
+    userRole === "srmanager" ||
+    userRole === "sr._manager"
+  ) {
     // Sr. Manager sees unlinked templates created by themselves or Managers
     const managerRole = await Role.findOne({ name: "manager" })
       .select("_id")
