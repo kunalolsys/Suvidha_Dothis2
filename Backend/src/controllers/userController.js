@@ -639,7 +639,7 @@ export const importUsersCSV = handleAsync(async (req, res, next) => {
     return next(new AppError("CSV file is empty.", 400));
   }
 
-  // 🟢 CLEAN CSV KEYS (Remove UTF-8 BOM mark `` and trim whitespace from Header Keys)
+  // 🟢 CLEAN CSV KEYS (Remove UTF-8 BOM mark and trim whitespace)
   const rows = rawRows.map((row) => {
     const cleanRow = {};
     Object.keys(row).forEach((key) => {
@@ -649,15 +649,13 @@ export const importUsersCSV = handleAsync(async (req, res, next) => {
     return cleanRow;
   });
 
-  // 2. Pre-fetch Masters
+  // 2. Pre-fetch Masters & Existing Users
   const [allRoles, allShifts, allDepartments, existingUsers] =
     await Promise.all([
       Role.find({}),
       WorkShift.find({ isDeleted: false }),
       Department.find({ isDeleted: false }),
-      User.find({ isDeleted: false }).select(
-        "email phone employeeCode role _id",
-      ),
+      User.find({ isDeleted: false }),
     ]);
 
   // Lookup Maps (Case-insensitive & Trimmed)
@@ -671,7 +669,19 @@ export const importUsersCSV = handleAsync(async (req, res, next) => {
     allDepartments.map((d) => [d.name.trim().toLowerCase(), d._id]),
   );
 
-  // Standard hierarchy lookup (matching createUser logic)
+  // Existing Users Lookup Maps for Quick UPSERT Matching
+  const existingUserByEmpCode = new Map(
+    existingUsers
+      .filter((u) => u.employeeCode)
+      .map((u) => [u.employeeCode.trim().toLowerCase(), u]),
+  );
+  const existingUserByEmail = new Map(
+    existingUsers
+      .filter((u) => u.email)
+      .map((u) => [u.email.trim().toLowerCase(), u]),
+  );
+
+  // Standard hierarchy lookup
   const superRole = allRoles.find((r) => r.name.toLowerCase() === "super");
   const adminRole = allRoles.find((r) => r.name.toLowerCase() === "admin");
 
@@ -682,21 +692,13 @@ export const importUsersCSV = handleAsync(async (req, res, next) => {
     (u) => String(u.role) === String(adminRole?._id),
   );
 
-  // Duplicates tracking sets
-  const existingEmails = new Set(
-    existingUsers.map((u) => u.email?.toLowerCase()).filter(Boolean),
-  );
-  const existingEmpCodes = new Set(
-    existingUsers
-      .map((u) => u.employeeCode?.trim().toLowerCase())
-      .filter(Boolean),
-  );
-
   const emailsInCSV = new Set();
-  const validUsersToCreate = [];
+  const empCodesInCSV = new Set();
+
+  const validRowsToProcess = [];
   const errorRows = [];
 
-  // 3. Process Rows using exact createUser logic
+  // 3. Process and Validate CSV Rows
   for (const row of rows) {
     const name = (row.Name || "").trim();
     const email = (row.Email || "").trim().toLowerCase();
@@ -709,14 +711,13 @@ export const importUsersCSV = handleAsync(async (req, res, next) => {
 
     let errorReason = "";
 
-    // 🟢 Exact createUser validations
-    if (!name || !email || !phone || !password) {
-      errorReason =
-        "Please provide all required fields (Name, Email, Phone, Password).";
-    } else if (empCode && existingEmpCodes.has(empCode.toLowerCase())) {
-      errorReason = `Employee code '${empCode}' already exists in system.`;
-    } else if (emailsInCSV.has(email) || existingEmails.has(email)) {
-      errorReason = `User with email '${email}' already exists.`;
+    if (!name || !email || !phone) {
+      errorReason = "Required fields (Name, Email, Phone) are missing.";
+    } else if (
+      emailsInCSV.has(email) ||
+      (empCode && empCodesInCSV.has(empCode.toLowerCase()))
+    ) {
+      errorReason = `Duplicate record found within the uploaded CSV for email or employee code.`;
     }
 
     if (errorReason) {
@@ -731,23 +732,23 @@ export const importUsersCSV = handleAsync(async (req, res, next) => {
     if (!matchedRoleObj) {
       errorRows.push({
         ...row,
-        "Error Reason": `Role '${row.Role}' not found.`,
+        "Error Reason": `Role '${row.Role}' not found in system.`,
       });
       continue;
     }
     if (!shiftId) {
       errorRows.push({
         ...row,
-        "Error Reason": `Shift '${row.Shift}' not found.`,
+        "Error Reason": `Shift '${row.Shift}' not found in system.`,
       });
       continue;
     }
 
-    // Parse Departments (Single ObjectId mapping)
+    // Parse Department
     const firstDeptName = deptString.split(",")[0]?.trim().toLowerCase();
     const singleDeptId = firstDeptName ? deptMap.get(firstDeptName) : undefined;
 
-    // Reporting Manager Resolution (Matching createUser)
+    // Reporting Manager Resolution
     let resolvedReportingManager = undefined;
     if (matchedRoleObj.name === "admin") {
       resolvedReportingManager = superUser ? superUser._id : undefined;
@@ -755,12 +756,18 @@ export const importUsersCSV = handleAsync(async (req, res, next) => {
       resolvedReportingManager = adminUser ? adminUser._id : undefined;
     }
 
-    // Mark as checked
-    emailsInCSV.add(email);
-    if (empCode) existingEmpCodes.add(empCode.toLowerCase());
+    // Check if User already exists in Database (Match by Employee Code first, then Email)
+    const matchedExistingUser =
+      (empCode && existingUserByEmpCode.get(empCode.toLowerCase())) ||
+      existingUserByEmail.get(email);
 
-    validUsersToCreate.push({
+    // Track CSV uniqueness
+    emailsInCSV.add(email);
+    if (empCode) empCodesInCSV.add(empCode.toLowerCase());
+
+    validRowsToProcess.push({
       originalRow: row,
+      existingUser: matchedExistingUser || null,
       payload: {
         name,
         email,
@@ -770,38 +777,97 @@ export const importUsersCSV = handleAsync(async (req, res, next) => {
         role: matchedRoleObj._id,
         reportingManager: resolvedReportingManager,
         assignShift: shiftId,
-        password,
-        isActive: true,
-        isEmailNotificationEnabled: false,
-        mainEmailType: "email",
+        password: password || undefined, // Password is optional on update
       },
     });
   }
 
-  // 4. Safe Creation with SrNo Pre-calculation
+  // 4. Execute Creation / Update Logic
   const createdUsers = [];
+  const updatedUsers = [];
+
   const lastUser = await User.findOne({}, {}, { sort: { srNo: -1 } });
   let nextSrNo = lastUser && lastUser.srNo ? lastUser.srNo + 1 : 1;
 
-  for (const item of validUsersToCreate) {
+  for (const item of validRowsToProcess) {
     try {
-      // 🟢 Assign next explicit srNo to avoid Duplicate E11000 Error on Save Hook
-      item.payload.srNo = nextSrNo++;
+      if (item.existingUser) {
+        // 🟢 UPDATE EXISTING USER LOGIC
+        const targetUser = item.existingUser;
+        let isUpdated = false;
 
-      const newUser = await User.create(item.payload);
-      createdUsers.push(newUser);
+        // Compare and apply changes
+        const fieldsToUpdate = [
+          "name",
+          "email",
+          "phone",
+          "employeeCode",
+          "department",
+          "role",
+          "reportingManager",
+          "assignShift",
+        ];
 
-      // Async Log
-      createLog({
-        action: "CREATE",
-        module: "USER",
-        documentId: newUser._id,
-        performedBy: req.cookies?.userId || req.user?._id || null,
-        newData: newUser,
-        message: "User created via CSV import",
-      }).catch((e) => console.error("Log error:", e.message));
+        fieldsToUpdate.forEach((field) => {
+          if (
+            item.payload[field] !== undefined &&
+            String(targetUser[field]) !== String(item.payload[field])
+          ) {
+            targetUser[field] = item.payload[field];
+            isUpdated = true;
+          }
+        });
+
+        // Update password if provided explicitly in CSV
+        if (item.payload.password) {
+          targetUser.password = item.payload.password;
+          isUpdated = true;
+        }
+
+        if (isUpdated) {
+          await targetUser.save();
+          updatedUsers.push(targetUser);
+
+          // Log Action
+          createLog({
+            action: "UPDATE",
+            module: "USER",
+            documentId: targetUser._id,
+            performedBy: req.cookies?.userId || req.user?._id || null,
+            newData: targetUser,
+            message: "User details updated via CSV import",
+          }).catch((e) => console.error("Log error:", e.message));
+        }
+      } else {
+        // 🟢 CREATE NEW USER LOGIC
+        if (!item.payload.password) {
+          errorRows.push({
+            ...item.originalRow,
+            "Error Reason": "Password is required for new user creation.",
+          });
+          continue;
+        }
+
+        item.payload.srNo = nextSrNo++;
+        item.payload.isActive = true;
+        item.payload.isEmailNotificationEnabled = false;
+        item.payload.mainEmailType = "email";
+
+        const newUser = await User.create(item.payload);
+        createdUsers.push(newUser);
+
+        // Log Action
+        createLog({
+          action: "CREATE",
+          module: "USER",
+          documentId: newUser._id,
+          performedBy: req.cookies?.userId || req.user?._id || null,
+          newData: newUser,
+          message: "User created via CSV import",
+        }).catch((e) => console.error("Log error:", e.message));
+      }
     } catch (dbErr) {
-      let dbErrorMsg = dbErr.message || "Failed to create user.";
+      let dbErrorMsg = dbErr.message || "Failed to process record.";
       if (dbErr.code === 11000) {
         const field = Object.keys(dbErr.keyPattern || {})[0] || "index";
         dbErrorMsg = `Duplicate entry error on field '${field}' in database.`;
@@ -813,13 +879,14 @@ export const importUsersCSV = handleAsync(async (req, res, next) => {
     }
   }
 
-  res.status(201).json({
+  res.status(200).json({
     status: "success",
     data: {
-      validCount: createdUsers.length,
+      createdCount: createdUsers.length,
+      updatedCount: updatedUsers.length,
       errorCount: errorRows.length,
       errorRows,
     },
-    message: `${createdUsers.length} user(s) registered successfully`,
+    message: `Import completed: ${createdUsers.length} user(s) created, ${updatedUsers.length} user(s) updated.`,
   });
 });
