@@ -31,6 +31,7 @@ import { DelegationTask } from "../models/Task.js";
 import Task from '../models/Task.js';
 import mongoose from "mongoose";
 import moment from "moment";
+import { importDelegationTasks, importRecurringTasks, updateRecurringTaskEndDates } from '../controllers/taskImportController.js';
 
 const router = express.Router();
 
@@ -38,6 +39,9 @@ router.post('/', authenticateJWT, upload.array('attachmentFile'), createTask);
 
 // Import Tasks from CSV
 router.post('/import', authenticateJWT, upload.single('file'), importTasks);
+router.post('/import/delegation', authenticateJWT, upload.single('file'), importDelegationTasks);
+router.post('/import/recurring', authenticateJWT, upload.single('file'), importRecurringTasks);
+router.patch('/import/recurring/reset-end-date', authenticateJWT, upload.single('file'), updateRecurringTaskEndDates);
 
 // Upload attachment
 router.post(

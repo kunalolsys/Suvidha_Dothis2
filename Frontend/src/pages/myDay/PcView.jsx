@@ -714,7 +714,7 @@ const PCView = () => {
     };
   }, [socket]);
 
-  const viewHeading = "PC view";
+  const viewHeading = "Delegator View";
 
   // --- Initial Data Load (Task Counts) ---
   useEffect(() => {

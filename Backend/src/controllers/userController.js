@@ -33,7 +33,7 @@ async function getAllSubordinates(managerId) {
   return allSubordinates;
 }
 export const getAllUsers = handleAsync(async (req, res, next) => {
-  const {
+  let {
     page = 1,
     limit = 10,
     active,
@@ -67,14 +67,12 @@ export const getAllUsers = handleAsync(async (req, res, next) => {
     ];
   }
 
-  // 🟢 ROLE FILTER FIX: Prevent Overwriting
+  // 🟢 ROLE FILTER FIX
   const superRole = await Role.findOne({ name: "Super" }).select("_id");
 
   if (role) {
-    // Agar explicit role passed ho, to vahi role filter me jayega
     filter.role = role;
   } else if (superRole) {
-    // Agar explicit role pass nahi hai, to Super role skip hoga
     filter.role = { $ne: superRole._id };
   }
 
@@ -92,10 +90,14 @@ export const getAllUsers = handleAsync(async (req, res, next) => {
     filter.assignShift = assignShift;
   }
 
-  // ✅ Fetch users directly using MongoDB Pagination (Performance Optimized)
-  const skip = (page - 1) * limit;
-
   const total = await User.countDocuments(filter);
+
+  // 🟢 SEARCH PAGE BUG FIX: Agar calculated skip total results se zyada ho to page = 1 kar do
+  let currentSkip = (Number(page) - 1) * Number(limit);
+  if (currentSkip >= total && total > 0) {
+    page = 1;
+    currentSkip = 0;
+  }
 
   const users = await User.find(filter, "-password")
     .populate("department", "name")
@@ -103,7 +105,7 @@ export const getAllUsers = handleAsync(async (req, res, next) => {
     .populate("role", "name displayName")
     .populate("assignShift")
     .sort({ createdAt: -1 })
-    .skip(skip)
+    .skip(currentSkip)
     .limit(Number(limit))
     .lean();
 
@@ -114,7 +116,7 @@ export const getAllUsers = handleAsync(async (req, res, next) => {
       total,
       page: Number(page),
       limit: Number(limit),
-      totalPages: Math.ceil(total / Number(limit)),
+      totalPages: Math.ceil(total / Number(limit)) || 1,
     },
   });
 });
@@ -180,15 +182,34 @@ export const exportUsers = handleAsync(async (req, res) => {
     ];
   }
 
-  // 🔥 NO PAGINATION HERE
+  // NO PAGINATION - Populate required references
   const users = await User.find(filter, "-password")
     .populate("department", "name")
     .populate("role", "name displayName")
-    .populate("assignShift");
+    .populate("assignShift", "name");
+
+  // Format data specifically for Export (CSV / Excel friendly structure)
+  const formattedUsers = users.map((u) => ({
+    "Employee Code": u.employeeCode || "",
+    Name: u.name || "",
+    Email: u.email || "",
+    Phone: u.phone || "",
+    Role: u.role?.displayName || u.role?.name || "",
+    Department: Array.isArray(u.department)
+      ? u.department.map((d) => d.name).join(", ")
+      : u.department?.name || "",
+    Shift: u.assignShift?.name || "",
+    "Telegram Username": u.telegramUserName || "", // 🟢 Telegram Username Field
+    "Telegram Notifications": u.telegramNotificationsEnabled
+      ? "Enabled"
+      : "Disabled", // 🟢 Telegram Notifications Status
+    Status: u.isActive ? "Active" : "Inactive",
+  }));
 
   return res.status(200).json({
     success: true,
-    data: users,
+    count: formattedUsers.length,
+    data: formattedUsers, // Returns cleanly structured data ready for Excel/CSV export
   });
 });
 
@@ -698,6 +719,14 @@ export const importUsersCSV = handleAsync(async (req, res, next) => {
   const validRowsToProcess = [];
   const errorRows = [];
 
+  // Helper for Boolean parsing
+  const parseBooleanValue = (val, defaultValue = true) => {
+    if (val === undefined || val === null || String(val).trim() === "")
+      return defaultValue;
+    const cleanVal = String(val).trim().toLowerCase();
+    return ["true", "yes", "1", "enable", "enabled"].includes(cleanVal);
+  };
+
   // 3. Process and Validate CSV Rows
   for (const row of rows) {
     const name = (row.Name || "").trim();
@@ -708,6 +737,19 @@ export const importUsersCSV = handleAsync(async (req, res, next) => {
     const roleName = (row.Role || "").trim().toLowerCase();
     const shiftName = (row.Shift || "").trim().toLowerCase();
     const deptString = (row.Departme || row.Department || "").trim();
+
+    // 🟢 Telegram Fields Extraction
+    const telegramUserName = (
+      row["Telegram Username"] ||
+      row["Telegram User Name"] ||
+      row["Telegram"] ||
+      ""
+    ).trim();
+
+    const telegramNotificationsEnabled = parseBooleanValue(
+      row["Telegram Notifications"] || row["Telegram Notification"],
+      true,
+    );
 
     let errorReason = "";
 
@@ -777,7 +819,9 @@ export const importUsersCSV = handleAsync(async (req, res, next) => {
         role: matchedRoleObj._id,
         reportingManager: resolvedReportingManager,
         assignShift: shiftId,
-        password: password || undefined, // Password is optional on update
+        password: password || undefined,
+        telegramUserName: telegramUserName || null, // 👈 Saved in User Model
+        telegramNotificationsEnabled, // 👈 Saved in User Model
       },
     });
   }
@@ -796,7 +840,6 @@ export const importUsersCSV = handleAsync(async (req, res, next) => {
         const targetUser = item.existingUser;
         let isUpdated = false;
 
-        // Compare and apply changes
         const fieldsToUpdate = [
           "name",
           "email",
@@ -806,6 +849,8 @@ export const importUsersCSV = handleAsync(async (req, res, next) => {
           "role",
           "reportingManager",
           "assignShift",
+          "telegramUserName", // 👈 Check for Telegram Username Updates
+          "telegramNotificationsEnabled", // 👈 Check for Telegram Notification Toggle
         ];
 
         fieldsToUpdate.forEach((field) => {
@@ -818,7 +863,7 @@ export const importUsersCSV = handleAsync(async (req, res, next) => {
           }
         });
 
-        // Update password if provided explicitly in CSV
+        // Update password if provided explicitly
         if (item.payload.password) {
           targetUser.password = item.payload.password;
           isUpdated = true;
@@ -828,7 +873,6 @@ export const importUsersCSV = handleAsync(async (req, res, next) => {
           await targetUser.save();
           updatedUsers.push(targetUser);
 
-          // Log Action
           createLog({
             action: "UPDATE",
             module: "USER",
@@ -856,7 +900,6 @@ export const importUsersCSV = handleAsync(async (req, res, next) => {
         const newUser = await User.create(item.payload);
         createdUsers.push(newUser);
 
-        // Log Action
         createLog({
           action: "CREATE",
           module: "USER",

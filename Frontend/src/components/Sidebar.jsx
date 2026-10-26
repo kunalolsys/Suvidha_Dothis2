@@ -260,7 +260,7 @@ const Sidebar = ({ children }) => {
     // if (name.includes("manager")) return "Manager View";
     // if (name.includes("owner")) return "Owner View";
     if (name.includes("admin")) return "Admin View";
-    // if (name.includes("pc")) return "PC View";
+    if (name.includes("delegator")) return "Delegator View";
     return "";
   }, [user]);
 
@@ -287,7 +287,7 @@ const Sidebar = ({ children }) => {
     if (hasPermission("role_view", "read") && managerViewLabel) {
       baseLinks.push({
         path:
-          managerViewLabel === "PC View" ? "/my-day/pc-view" : "/my-day/view",
+          managerViewLabel === "Delegator View" ? "/my-day/delegator-view" : "/my-day/view",
         label: managerViewLabel,
         icon: Eye,
       });

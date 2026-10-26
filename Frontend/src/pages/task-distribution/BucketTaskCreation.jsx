@@ -669,7 +669,7 @@ const BucketCreation = () => {
                           )
                           .map((r) => ({
                             value: r._id,
-                            label: r.name,
+                            label:r.displayName || r.name,
                           }))}
                       />
                     </div>
@@ -691,7 +691,7 @@ const BucketCreation = () => {
                         style={{ width: "100%" }}
                         options={filteredMembers.map((u) => ({
                           value: u._id,
-                          label: u.name,
+                          label: u.displayName || u.name,
                         }))}
                       />
                     </div>

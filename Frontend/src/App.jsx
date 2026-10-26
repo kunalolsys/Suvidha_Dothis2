@@ -151,7 +151,7 @@ function App() {
                   }
                 />
                 <Route
-                  path="/my-day/pc-view"
+                  path="/my-day/delegator-view"
                   element={
                     <PermissionRoute requiredPermission="role_view">
                       <PCView />

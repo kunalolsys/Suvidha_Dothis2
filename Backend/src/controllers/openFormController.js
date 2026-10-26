@@ -90,7 +90,7 @@ export const getAllOpenForms = handleAsync(async (req, res) => {
   // =========================
   // 👥 ROLE BASED ACCESS
   // =========================
-  if (userRole === "admin" || userRole === "pc") {
+  if (userRole === "admin" || userRole === "pc"|| userRole === "delegator") {
     // ✅ ADMIN / PC sees ALL open forms across all users.
     // No query.createdBy filter needed.
   } else if (

@@ -1089,7 +1089,7 @@ export const getFmsInstances = handleAsync(async (req, res) => {
 
   const query = { isTerminated: false };
 
-  if (userRole === "admin" || userRole === "pc") {
+  if (userRole === "admin" || userRole === "pc" || userRole === "delegator") {
     // Admin / PC sees all
   } else if (
     userRole === "sr. manager" ||
@@ -1159,10 +1159,7 @@ export const getFmsInstances = handleAsync(async (req, res) => {
 
   const [instances, total] = await Promise.all([
     FmsInstance.find(query)
-      .populate(
-        "fmsTemplateId createdBy",
-        "templateName fmsId name email",
-      )
+      .populate("fmsTemplateId createdBy", "templateName fmsId name email")
       .sort({ startDate: -1, createdAt: -1 })
       .skip(skip)
       .limit(Number(limit))
@@ -1232,9 +1229,9 @@ export const getFmsInstancesCount = handleAsync(async (req, res) => {
 
 //**GET LAUNCHED FMS BY ID */
 export const getFmsInstanceById = handleAsync(async (req, res, next) => {
-  const instance = await FmsInstance.findById(req.params.id)
-    // .populate("srManager", "name email")
-    // .populate("manager", "name email");
+  const instance = await FmsInstance.findById(req.params.id);
+  // .populate("srManager", "name email")
+  // .populate("manager", "name email");
   if (!instance) return next(new AppError("Instance not found", 404));
   res.json({ success: true, data: instance });
 });
@@ -1321,7 +1318,7 @@ export const getAssignedTaskTemplates = handleAsync(async (req, res) => {
     { status: { $nin: ["Terminated"] } },
   ];
 
-  if (role === "admin" || role === "owner" || role === "pc") {
+  if (role === "admin" || role === "owner" || role === "pc" || role === "delegator") {
     if (selectedDoer && selectedDoer !== "all") {
       fmsAndConditions.push({
         assignedTo: new mongoose.Types.ObjectId(selectedDoer),

@@ -834,7 +834,7 @@ export const getAllTasksWithStats = async (req, res) => {
     // =========================
     const andConditions = [];
 
-    if (role === "admin" || role === "owner" || role === "pc") {
+    if (role === "admin" || role === "owner" || role === "pc"|| role === "delegator") {
       // Full access → no restriction
     } else if (role === "sr.manager" || role === "srmanager") {
       const srManagerId = userId;
@@ -986,18 +986,19 @@ export const getAllTasksWithStats = async (req, res) => {
       Completed: visibleTasks.filter((t) => t.status === "Completed").length,
       Delayed: visibleTasks.filter((t) => t.status === "Delayed").length,
       Upcoming: visibleTasks.filter((t) => t.status === "Upcoming").length,
-      Overdue: visibleTasks.filter((t) => {
-        if (t.status === "Overdue") return true;
-        // Check dynamic overdue condition if status isn't explicitly set
-        if (
-          t.dueDate &&
-          new Date(t.dueDate) < todayStart &&
-          !["Completed", "Stopped", "Not Done"].includes(t.status)
-        ) {
-          return true;
-        }
-        return false;
-      }).length,
+      Overdue: visibleTasks.filter((t) => t.status === "Overdue").length,
+      // Overdue: visibleTasks.filter((t) => {
+      //   if (t.status === "Overdue") return true;
+      //   // Check dynamic overdue condition if status isn't explicitly set
+      //   if (
+      //     t.dueDate &&
+      //     new Date(t.dueDate) < todayStart &&
+      //     !["Completed", "Stopped", "Not Done"].includes(t.status)
+      //   ) {
+      //     return true;
+      //   }
+      //   return false;
+      // }).length,
     };
 
     return res.status(200).json({
@@ -2839,7 +2840,7 @@ export const getRoleBasedTasks = handleAsync(async (req, res) => {
   const andConditions = [];
 
   if (shouldFetchDoThis) {
-    if (role === "admin" || role === "owner" || role === "pc") {
+    if (role === "admin" || role === "owner" || role === "pc" || role === "delegator") {
       if (selectedDoer && selectedDoer !== "all") {
         andConditions.push({ assignedTo: selectedDoer });
       }
@@ -2995,7 +2996,7 @@ export const getRoleBasedTasks = handleAsync(async (req, res) => {
       const instanceIds = matchingInstances.map((i) => i._id);
       fmsAndConditions.push({ fmsInstanceId: { $in: instanceIds } });
     }
-    if (role === "admin" || role === "owner" || role === "pc") {
+    if (role === "admin" || role === "owner" || role === "pc" || role === "delegator") {
       if (selectedDoer && selectedDoer !== "all") {
         fmsAndConditions.push({ assignedTo: selectedDoer });
       }

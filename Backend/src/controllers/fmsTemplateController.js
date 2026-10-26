@@ -221,7 +221,7 @@ export const getTemplates = handleAsync(async (req, res) => {
   // =========================
   // 👥 ROLE BASED FILTERING
   // =========================
-  if (userRole === "admin" || userRole === "pc") {
+  if (userRole === "admin" || userRole === "pc" || userRole === "delegator") {
     // ✅ ADMIN / PC sees ALL templates across the organization.
     // No filter.user constraint needed.
   } else if (
@@ -337,7 +337,7 @@ export const getTemplatesForDropdown = handleAsync(async (req, res) => {
   // =========================
   // 👥 ROLE BASED FILTERING
   // =========================
-  if (userRole === "admin" || userRole === "pc") {
+  if (userRole === "admin" || userRole === "pc" || userRole === "delegator") {
     // ✅ ADMIN / PC sees ALL available (unlinked) templates across all users
   } else if (
     userRole === "sr. manager" ||

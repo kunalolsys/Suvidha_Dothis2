@@ -220,8 +220,9 @@ const Users = () => {
       "Role",
       "Department",
       "Shift",
-      // "Reporting Manager",
       "Password",
+      "Telegram Username",
+      "Telegram Notifications",
     ];
     const ws = XLSX.utils.aoa_to_sheet([headers]);
     const wb = XLSX.utils.book_new();
@@ -273,10 +274,24 @@ const Users = () => {
     toast.promise(promise, {
       loading: "Processing user import on server...",
       success: (res) => {
-        const { validCount, errorRows } = res.data;
-        const result = { validCount, errorRows };
+        // Backend Response Destructuring
+        const {
+          createdCount = 0,
+          updatedCount = 0,
+          errorCount = 0,
+          errorRows = [],
+        } = res?.data || {};
+        const apiMessage = res?.message || "Import completed successfully.";
 
-        setImportResult(result);
+        // State update with all metrics
+        setImportResult({
+          createdCount,
+          updatedCount,
+          errorCount,
+          errorRows,
+          message: apiMessage,
+        });
+
         setLoading(false);
 
         // Refresh User Table
@@ -291,17 +306,19 @@ const Users = () => {
           }),
         );
 
-        return `${validCount} user(s) imported successfully. Check dialog for details.`;
+        return apiMessage;
       },
       error: (err) => {
         setLoading(false);
         const errorMessage =
           typeof err === "string"
             ? err
-            : err.message || "An unknown error occurred.";
+            : err?.message || "An unknown error occurred.";
 
         setImportResult({
-          validCount: 0,
+          createdCount: 0,
+          updatedCount: 0,
+          errorCount: 0,
           errorRows: [],
           generalError: errorMessage,
         });
@@ -315,42 +332,68 @@ const Users = () => {
     try {
       const res = await dispatch(
         exportUsers({
-          selectedRole,
-          selectedDepartment,
-          selectedShift,
-          searchTerm: debouncedSearch,
+          role: selectedRole || undefined,
+          department: selectedDepartment || undefined,
+          assignShift: selectedShift || undefined,
+          search: debouncedSearch || undefined,
         }),
       ).unwrap();
 
-      if (!res || res.length === 0) {
+      // 1. Safe extraction handling raw array or { success, data } object
+      const usersData = Array.isArray(res) ? res : res?.data || [];
+
+      if (!usersData || usersData.length === 0) {
         toast.error("No users to export");
         return;
       }
 
-      // 🟢 Super User ko export list se exclude (filter) karein
-      const filteredRes = res.filter(
-        (user) => user.role?.name?.toLowerCase() !== "super",
-      );
+      // 2. 🟢 Super User exclude filter (Checking both raw 'role.name' and formatted 'Role' string)
+      const filteredRes = usersData.filter((user) => {
+        const roleName = (
+          typeof user.role === "object"
+            ? user.role?.name
+            : user.Role || user.role || ""
+        ).toLowerCase();
+        return roleName !== "super";
+      });
 
       if (filteredRes.length === 0) {
         toast.error("No users to export");
         return;
       }
 
+      // 3. 🟢 Clean Row Mapping (Support for pre-formatted Backend Objects)
       const rows = filteredRes.map((user, idx) => {
-        const manager = filteredRes.find(
-          (u) => u._id === user.reportingManager,
-        );
         return {
           "Sr. No.": idx + 1,
-          "Employee Code": user.employeeCode || "-",
-          Name: user.name || "N/A",
-          Email: user.email || "N/A",
-          Phone: user.phone || "-",
-          Department: user.department?.name || user.department || "-",
-          Role: user.role?.name || "N/A",
-          Shift: user.assignShift?.name || "N/A",
-          // "Reporting Manager": manager?.name || "N/A",
+          "Employee Code": user["Employee Code"] || user.employeeCode || "-",
+          Name: user.Name || user.name || "N/A",
+          Email: user.Email || user.email || "N/A",
+          Phone: user.Phone || user.phone || "-",
+          Department:
+            user.Department ||
+            (typeof user.department === "object"
+              ? user.department?.name
+              : user.department) ||
+            "-",
+          Role:
+            user.Role ||
+            (typeof user.role === "object"
+              ? user.role?.displayName || user.role?.name
+              : user.role) ||
+            "N/A",
+          Shift:
+            user.Shift ||
+            (typeof user.assignShift === "object"
+              ? user.assignShift?.name
+              : user.assignShift) ||
+            "N/A",
+          "Telegram Username":
+            user["Telegram Username"] || user.telegramUserName || "-",
+          "Telegram Notifications":
+            user["Telegram Notifications"] ||
+            (user.telegramNotificationsEnabled ? "Enabled" : "Disabled"),
+          Status: user.Status || (user.isActive ? "Active" : "Inactive"),
         };
       });
 
@@ -360,6 +403,7 @@ const Users = () => {
       const ws = XLSX.utils.json_to_sheet(rows);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Users");
+
       XLSX.writeFile(wb, filename, {
         bookType: format === "csv" ? "csv" : format,
       });
@@ -370,7 +414,12 @@ const Users = () => {
       toast.error("Export failed. See console for details.");
     }
   };
-
+  // Search Handler in User Listing Component
+  const handleSearchChange = (e) => {
+    const value = e.target.value;
+    setSearchTerm(value);
+    setPage(1); // 👈 Critical Fix: Search change hone par page hamesha 1 reset karo
+  };
   return (
     <Card className="m-6 shadow-lg">
       <CardHeader>
@@ -440,7 +489,7 @@ const Users = () => {
           <Input
             placeholder="Search by name, email or employee code..."
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(e) => handleSearchChange(e)}
             className="max-w-xs"
           />
           <Select
@@ -520,7 +569,7 @@ const Users = () => {
                 <TableHead>Primary Role</TableHead>
                 <TableHead>Shifts</TableHead>
                 <TableHead>Telegram Notification</TableHead>
-                <TableHead>Telegram Chat ID</TableHead>
+                <TableHead>Telegram Username</TableHead>
                 {(canUpdate || canDelete) && (
                   <TableHead className="text-right">Actions</TableHead>
                 )}
@@ -563,7 +612,7 @@ const Users = () => {
                           : "Disabled"}
                       </span>
                     </TableCell>{" "}
-                    <TableCell>{user.telegramChatId || "-"}</TableCell>
+                    <TableCell>{user.telegramUserName || "-"}</TableCell>
                     {(canUpdate || canDelete) && (
                       <TableCell className="flex gap-1">
                         {canUpdate && (
@@ -664,8 +713,8 @@ const Users = () => {
             </DialogTitle>
             {!importResult && (
               <DialogDescription>
-                Upload a CSV file to add multiple users at once. Please ensure
-                your file follows the specified format.
+                Upload a CSV file to add or update multiple users at once.
+                Please ensure your file follows the specified format.
               </DialogDescription>
             )}
           </DialogHeader>
@@ -676,14 +725,14 @@ const Users = () => {
               <div className="space-y-4 p-4 bg-gray-50 rounded-lg border">
                 <h4 className="font-semibold text-gray-800 flex items-center gap-2">
                   <ListChecks className="w-5 h-5 text-gray-500" />
-                  Required Columns
+                  Required & Optional Columns
                 </h4>
                 <ul className="list-disc list-inside text-sm text-gray-600 space-y-1">
                   <li>
                     <code className="bg-gray-200 px-1 rounded">
                       Employee Code
                     </code>{" "}
-                    (Text or Number)
+                    (Text/Number - Used for Upsert)
                   </li>
                   <li>
                     <code className="bg-gray-200 px-1 rounded">Name</code>{" "}
@@ -694,31 +743,36 @@ const Users = () => {
                     (Unique Email)
                   </li>
                   <li>
-                    <code className="bg-gray-200 px-1 rounded">Phone</code>{" "}
-                    (Text)
+                    <code className="bg-gray-200 px-1 rounded">Phone</code> (10
+                    Digits)
                   </li>
                   <li>
-                    <code className="bg-gray-200 px-1 rounded">Role</code> (Must
-                    match an existing Role name)
+                    <code className="bg-gray-200 px-1 rounded">Role</code>{" "}
+                    (Exact Role Name)
                   </li>
                   <li>
                     <code className="bg-gray-200 px-1 rounded">Department</code>{" "}
-                    (Use exact names from Setup page, comma-separated for
-                    multiple)
+                    (Exact Dept Name)
                   </li>
                   <li>
                     <code className="bg-gray-200 px-1 rounded">Shift</code>{" "}
-                    (Must match an existing Shift name)
+                    (Exact Shift Name)
                   </li>
-                  {/* <li>
-                    <code className="bg-gray-200 px-1 rounded">
-                      Reporting Manager
-                    </code>{" "}
-                    (Manager's Name)
-                  </li> */}
                   <li>
                     <code className="bg-gray-200 px-1 rounded">Password</code>{" "}
-                    (Min. 6 characters)
+                    (Required for new, optional on update)
+                  </li>
+                  <li>
+                    <code className="bg-gray-200 px-1 rounded">
+                      Telegram Username
+                    </code>{" "}
+                    (Optional)
+                  </li>
+                  <li>
+                    <code className="bg-gray-200 px-1 rounded">
+                      Telegram Notifications
+                    </code>{" "}
+                    (Optional, true/false)
                   </li>
                 </ul>
                 <Button
@@ -732,7 +786,7 @@ const Users = () => {
               </div>
 
               {/* Upload Section */}
-              <div className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-gray-300 rounded-lg">
+              <div className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-gray-300 rounded-lg bg-gray-50/50">
                 <label
                   htmlFor="file-upload"
                   className="flex flex-col items-center justify-center w-full h-full cursor-pointer"
@@ -744,7 +798,7 @@ const Users = () => {
                   <span className="text-xs text-gray-500">
                     or drag and drop
                   </span>
-                  <p className="text-xs text-gray-500 mt-2">CSV files only</p>
+                  <p className="text-xs text-gray-400 mt-2">CSV files only</p>
                   <Input
                     id="file-upload"
                     type="file"
@@ -754,51 +808,89 @@ const Users = () => {
                   />
                 </label>
                 {uploadFile && (
-                  <div className="mt-4 text-center text-sm text-green-600 font-medium">
-                    <p>Selected: {uploadFile.name}</p>
+                  <div className="mt-4 p-2 bg-green-50 border border-green-200 rounded text-center text-xs text-green-700 font-medium w-full">
+                    Selected: {uploadFile.name}
                   </div>
                 )}
               </div>
             </div>
           ) : (
-            <div className="py-4 text-center">
-              <h3 className="text-lg font-semibold mb-4">Import Complete</h3>
-              <div className="flex justify-center gap-8">
-                <div className="text-green-600">
-                  <CheckCircle className="w-12 h-12 mx-auto mb-2" />
-                  <p className="text-2xl font-bold">
-                    {importResult.validCount}
+            /* 🟢 UPDATED IMPORT COMPLETE RESPONSE UI */
+            <div className="py-6 space-y-6">
+              <div className="text-center">
+                <h3 className="text-xl font-bold text-gray-800">
+                  Import Summary
+                </h3>
+                {importResult.message && (
+                  <p className="text-sm text-gray-500 mt-1">
+                    {importResult.message}
                   </p>
-                  <p>Users Imported Successfully</p>
+                )}
+              </div>
+
+              {/* 3 Metric Cards for Created, Updated, and Errors */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {/* Created Users */}
+                <div className="p-4 bg-green-50 border border-green-200 rounded-lg text-center">
+                  <CheckCircle className="w-8 h-8 text-green-600 mx-auto mb-2" />
+                  <p className="text-3xl font-extrabold text-green-700">
+                    {importResult.createdCount ?? importResult.validCount ?? 0}
+                  </p>
+                  <p className="text-xs font-semibold text-green-600 uppercase tracking-wider mt-1">
+                    Users Created
+                  </p>
                 </div>
-                <div className="text-red-600">
-                  <AlertCircle className="w-12 h-12 mx-auto mb-2" />
-                  <p className="text-2xl font-bold">
-                    {importResult.errorRows.length}
+
+                {/* Updated Users */}
+                <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg text-center">
+                  <CheckCircle className="w-8 h-8 text-blue-600 mx-auto mb-2" />
+                  <p className="text-3xl font-extrabold text-blue-700">
+                    {importResult.updatedCount ?? 0}
                   </p>
-                  <p>Rows with Errors</p>
+                  <p className="text-xs font-semibold text-blue-600 uppercase tracking-wider mt-1">
+                    Users Updated
+                  </p>
+                </div>
+
+                {/* Error Rows */}
+                <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-center">
+                  <AlertCircle className="w-8 h-8 text-red-600 mx-auto mb-2" />
+                  <p className="text-3xl font-extrabold text-red-700">
+                    {importResult.errorCount ??
+                      importResult.errorRows?.length ??
+                      0}
+                  </p>
+                  <p className="text-xs font-semibold text-red-600 uppercase tracking-wider mt-1">
+                    Rows with Errors
+                  </p>
                 </div>
               </div>
+
+              {/* General Error Alert if any */}
               {importResult.generalError && (
-                <p className="text-red-500 mt-4">
-                  An error occurred: {importResult.generalError}
-                </p>
+                <div className="p-3 bg-red-100 border border-red-300 text-red-700 text-sm rounded-md text-center">
+                  An unexpected error occurred: {importResult.generalError}
+                </div>
               )}
             </div>
           )}
 
           <DialogFooter>
             {importResult ? (
-              <>
-                {importResult.errorRows.length > 0 && (
-                  <Button
-                    variant="destructive"
-                    onClick={handleDownloadErrorFile}
-                  >
-                    <Download className="mr-2 h-4 w-4" />
-                    Download Error Report
-                  </Button>
-                )}
+              <div className="flex items-center justify-between w-full">
+                <div>
+                  {(importResult.errorCount > 0 ||
+                    importResult.errorRows?.length > 0) && (
+                    <Button
+                      variant="destructive"
+                      onClick={handleDownloadErrorFile}
+                      className="gap-2"
+                    >
+                      <Download className="h-4 w-4" />
+                      Download Error Report
+                    </Button>
+                  )}
+                </div>
                 <Button
                   onClick={() => {
                     setIsBulkUploadOpen(false);
@@ -808,7 +900,7 @@ const Users = () => {
                 >
                   Close
                 </Button>
-              </>
+              </div>
             ) : (
               <>
                 <Button
