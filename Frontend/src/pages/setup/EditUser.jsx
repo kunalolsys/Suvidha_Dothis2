@@ -54,17 +54,17 @@ const EditUser = () => {
   const dispatch = useDispatch();
 
   const { currentUser, status: userStatus } = useSelector(
-    (state) => state.users
+    (state) => state.users,
   );
 
   const { allDepartments, status: departmentStatus } = useSelector(
-    (state) => state.departments
+    (state) => state.departments,
   );
 
   const { roles, status: roleStatus } = useSelector((state) => state.roles);
 
   const { workShifts, status: workShiftStatus } = useSelector(
-    (state) => state.workShifts
+    (state) => state.workShifts,
   );
 
   // Initial API Calls on Mount
@@ -87,7 +87,8 @@ const EditUser = () => {
       telegramUserName: currentUser?.telegramUserName || "",
       role: currentUser?.role?._id || currentUser?.role || "",
       department: getDepartmentId(currentUser?.department),
-      assignShift: currentUser?.assignShift?._id || currentUser?.assignShift || "",
+      assignShift:
+        currentUser?.assignShift?._id || currentUser?.assignShift || "",
       password: "",
       confirmPassword: "",
       employeeCode:
@@ -131,7 +132,10 @@ const EditUser = () => {
 
       role: Yup.string().required("Role is required"),
       assignShift: Yup.string().required("Assign Shift is required"),
-      password: Yup.string().min(6, "Password must be at least 6 characters"),
+      password: Yup.string()
+        .trim()
+        .transform((value) => (value === "" ? undefined : value))
+        .min(6, "Password must be at least 6 characters"),
       confirmPassword: Yup.string().when("password", {
         is: (password) => password && password.length > 0,
         then: (schema) =>
@@ -174,7 +178,9 @@ const EditUser = () => {
   if (isDataLoading) {
     return (
       <div className="flex items-center justify-center p-12 h-64">
-        <span className="text-gray-500 font-medium">Loading user details & options...</span>
+        <span className="text-gray-500 font-medium">
+          Loading user details & options...
+        </span>
       </div>
     );
   }
@@ -311,7 +317,7 @@ const EditUser = () => {
                     onCheckedChange={(value) =>
                       formik.setFieldValue(
                         "telegramNotificationsEnabled",
-                        value
+                        value,
                       )
                     }
                     className="data-[state=checked]:bg-blue-600"
@@ -475,6 +481,12 @@ const EditUser = () => {
                 onChange={formik.handleChange}
                 onBlur={formik.handleBlur}
               />
+              {formik.touched.password &&
+                formik.errors.password && (
+                  <span className="text-red-500 text-xs">
+                    {formik.errors.password}
+                  </span>
+                )}
             </div>
 
             <div className="space-y-2">
@@ -488,7 +500,7 @@ const EditUser = () => {
                 id="confirmPassword"
                 type="password"
                 placeholder="Confirm New Password"
-                value={formik.values.password}
+                value={formik.values.confirmPassword}
                 onChange={formik.handleChange}
               />
               {formik.touched.confirmPassword &&

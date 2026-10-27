@@ -2056,25 +2056,6 @@ const TaskTable = ({
                                 <span className="text-sm font-medium text-gray-900">
                                   {task.assignedBy?.name || "-"}
                                 </span>
-                                {assignedByUser?.name && (
-                                  <span
-                                    className={`text-xs px-2 py-0.5 rounded-full w-fit font-medium
-      ${
-        assignedByUser.role?.name === "admin"
-          ? "bg-red-100 text-red-700"
-          : assignedByUser.role?.name === "owner"
-            ? "bg-purple-100 text-purple-700"
-            // : assignedByUser.role?.name === "sr._manager"
-            //   ? "bg-blue-100 text-blue-700"
-            //   : assignedByUser.role?.name === "manager"
-            //     ? "bg-green-100 text-green-700"
-                : "bg-gray-100 text-gray-700"
-      }
-    `}
-                                  >
-                                    {assignedByUser.role?.name}
-                                  </span>
-                                )}
                               </div>
                             </TableCell>
                           )}
@@ -2085,26 +2066,6 @@ const TaskTable = ({
                                 <span className="text-sm font-medium text-gray-900">
                                   {task.assignedTo?.name || "-"}
                                 </span>
-
-                                {assignedToUser?.name && (
-                                  <span
-                                    className={`text-xs px-2 py-0.5 rounded-full w-fit font-medium
-      ${
-        assignedToUser.role?.name === "admin"
-          ? "bg-red-100 text-red-700"
-          : assignedToUser.role?.name === "owner"
-            ? "bg-purple-100 text-purple-700"
-            // : assignedToUser.role?.name === "sr._manager"
-            //   ? "bg-blue-100 text-blue-700"
-            //   : assignedToUser.role?.name === "manager"
-            //     ? "bg-green-100 text-green-700"
-                : "bg-gray-100 text-gray-700"
-      }
-    `}
-                                  >
-                                    {assignedToUser.role?.name}
-                                  </span>
-                                )}
                               </div>
                             </TableCell>
                           )}
@@ -2590,25 +2551,6 @@ const TaskTable = ({
                                 <span className="text-sm font-medium text-gray-900">
                                   {task.assignedBy?.name || "-"}
                                 </span>
-                                {assignedByUser?.name && (
-                                  <span
-                                    className={`text-xs px-2 py-0.5 rounded-full w-fit font-medium
-      ${
-        assignedByUser.role?.name === "admin"
-          ? "bg-red-100 text-red-700"
-          : assignedByUser.role?.name === "owner"
-            ? "bg-purple-100 text-purple-700"
-            // : assignedByUser.role?.name === "sr._manager"
-            //   ? "bg-blue-100 text-blue-700"
-            //   : assignedByUser.role?.name === "manager"
-            //     ? "bg-green-100 text-green-700"
-                : "bg-gray-100 text-gray-700"
-      }
-    `}
-                                  >
-                                    {assignedByUser.role?.name}
-                                  </span>
-                                )}
                               </div>
                             </TableCell>
                           )}
@@ -2620,26 +2562,6 @@ const TaskTable = ({
                                 <span className="text-sm font-medium text-gray-900">
                                   {task.assignedTo?.name || "-"}
                                 </span>
-
-                                {assignedToUser?.name && (
-                                  <span
-                                    className={`text-xs px-2 py-0.5 rounded-full w-fit font-medium
-      ${
-        assignedToUser.role?.name === "admin"
-          ? "bg-red-100 text-red-700"
-          : assignedToUser.role?.name === "owner"
-            ? "bg-purple-100 text-purple-700"
-            // : assignedToUser.role?.name === "sr._manager"
-            //   ? "bg-blue-100 text-blue-700"
-            //   : assignedToUser.role?.name === "manager"
-            //     ? "bg-green-100 text-green-700"
-                : "bg-gray-100 text-gray-700"
-      }
-    `}
-                                  >
-                                    {assignedToUser.role?.name}
-                                  </span>
-                                )}
                               </div>
                             </TableCell>
                           )}
@@ -2648,7 +2570,7 @@ const TaskTable = ({
                           </TableCell> */}
                           {recurringColumns.find((c) => c.key === "department")
                             ?.visible && (
-                            <TableCell className="whitespace-nowrap">
+                            <TableCell className="w-100 whitespace-nowrap">
                               {task.departmentOfAssignToUser?.name || "-"}
                             </TableCell>
                           )}
