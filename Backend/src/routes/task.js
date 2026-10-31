@@ -21,6 +21,7 @@ import {
   filterFMSTasks,
   getFMSTaskStats,
   exportMYFMSTasks,
+  exportRoleBasedTasks,
 } from '../controllers/taskController.js';
 import { reopenTask } from '../controllers/taskReopenController.js';
 
@@ -64,7 +65,7 @@ router.post('/my-task/export-fms', authenticateJWT, exportMYFMSTasks);
 
 router.post('/role-based-tasks', authenticateJWT, getRoleBasedTasks);
 router.post('/tasks-with-stats', authenticateJWT, getAllTasksWithStats);
-
+router.post("/export-task", authenticateJWT, exportRoleBasedTasks);
 
 router.post('/export', authenticateJWT, exportTasks);
 

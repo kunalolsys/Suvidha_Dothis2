@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import {
+  exportRoleBasedTasksThunk,
   fetchMyTasks,
   fetchTaskCounts,
   getFilterTasks,
@@ -90,7 +91,8 @@ import { Label } from "../../components/ui/index.jsx";
 import dayjs from "dayjs";
 import TaskChat from "../../components/TaskChat.jsx";
 import { useSocket } from "../../context/SocketContext.jsx";
-import { Popover } from "antd";
+import { message, Popover } from "antd";
+import { Select as AntdSelect } from "antd";
 
 // Priority Badge
 const PriorityBadge = ({ priority }) => {
@@ -465,24 +467,23 @@ const FilterBar = ({
             </SelectContent>
           </Select>
         )} */}
-        <Select
-          value={selectedDoer}
-          onValueChange={(val) => handleFilterChange(setSelectedDoer, val)}
-        >
-          <SelectTrigger className="w-full bg-white">
-            <SelectValue placeholder="All Doers" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all" className="font-semibold text-blue-700">
-              All Doers
-            </SelectItem>
-            {doers.map((doer) => (
-              <SelectItem key={doer._id} value={doer._id}>
-                {doer.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <AntdSelect
+          showSearch
+          allowClear
+          placeholder="All Doers"
+          className="w-full"
+          style={{ minWidth: 160 }}
+          value={selectedDoer === "all" ? undefined : selectedDoer}
+          onChange={(val) => handleFilterChange(setSelectedDoer, val || "all")}
+          optionFilterProp="label"
+          options={[
+            { value: "all", label: "All Doers" },
+            ...doers.map((doer) => ({
+              value: doer._id,
+              label: doer.name,
+            })),
+          ]}
+        />
         <Select
           value={selectedFilterStatus}
           onValueChange={onFilterStatusChange} // 🟢 SYNCHRONIZED DROPDOWN CALL
@@ -1013,45 +1014,84 @@ const ManagerView = () => {
     setFullDescription(desc);
     setIsDescriptionDialogOpen(true);
   };
-
   const handleExport = async () => {
-    setIsExporting(true);
     try {
-      const dataToExport = fetchedTasks.map((task, index) => ({
-        "Sr. No.": (localCurrentPage - 1) * localItemsPerPage + index + 1,
-        "Task ID": task.TaskId || "-",
-        "Task Title": task.title || "-",
-        "Assigned To": task.assignedTo?.name || "-",
-        Description: task.description || "-",
-        Type: task.taskType || "-",
-        Attachment: task.attachmentFile ? "Yes" : "No",
-        "Start Date": task.startDate
-          ? new Date(task.startDate).toLocaleDateString()
-          : "-",
-        "Due Date": task.dueDate
-          ? new Date(task.dueDate).toLocaleDateString()
-          : "-",
-        Status: task.status || "-",
-      }));
+      setIsExporting(true);
 
-      if (dataToExport.length === 0) {
-        toast.warning("No data to export");
-        return;
-      }
+      await dispatch(
+        exportRoleBasedTasksThunk({
+          userId: currentUser._id,
+          role: currentUser.role?.name,
+          departmentId: departmentId,
+          selectedDoer: selectedDoer || null,
+          selectedManager: selectedManager || null,
+          selectedSrManager: selectedSrManager || null,
+          search: debouncedSearch || searchTerm || "",
+          selectedTemplate: selectedTemplate || null,
+          taskTypeFilter: engineViewTab,
+          filters: {
+            stat: selectedStatFilter || null,
+            taskCategory: selectedStatFilter
+              ? null
+              : activeTab === "today"
+                ? "today_backlog"
+                : activeTab === "upcoming"
+                  ? "upcoming"
+                  : activeTab === "completed"
+                    ? "completed"
+                    : null,
+            status:
+              selectedFilterStatus === "all" ? null : selectedFilterStatus,
+          },
+        }),
+      ).unwrap();
 
-      const ws = XLSX.utils.json_to_sheet(dataToExport);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "ManagerTasks");
-      const timestamp = new Date().toISOString().split("T")[0];
-      XLSX.writeFile(wb, `ManagerTasks_${timestamp}.xlsx`);
-      toast.success("Export completed successfully");
-    } catch (error) {
-      console.error("Export error:", error);
-      toast.error("Failed to export data");
+      // Success feedback
+      message.success("Tasks exported successfully!");
+    } catch (err) {
+      message.error("Failed to export tasks");
     } finally {
       setIsExporting(false);
     }
   };
+  // const handleExport = async () => {
+  //   setIsExporting(true);
+  //   try {
+  //     const dataToExport = fetchedTasks.map((task, index) => ({
+  //       "Sr. No.": (localCurrentPage - 1) * localItemsPerPage + index + 1,
+  //       "Task ID": task.TaskId || "-",
+  //       "Task Title": task.title || "-",
+  //       "Assigned To": task.assignedTo?.name || "-",
+  //       Description: task.description || "-",
+  //       Type: task.taskType || "-",
+  //       Attachment: task.attachmentFile ? "Yes" : "No",
+  //       "Start Date": task.startDate
+  //         ? new Date(task.startDate).toLocaleDateString()
+  //         : "-",
+  //       "Due Date": task.dueDate
+  //         ? new Date(task.dueDate).toLocaleDateString()
+  //         : "-",
+  //       Status: task.status || "-",
+  //     }));
+
+  //     if (dataToExport.length === 0) {
+  //       toast.warning("No data to export");
+  //       return;
+  //     }
+
+  //     const ws = XLSX.utils.json_to_sheet(dataToExport);
+  //     const wb = XLSX.utils.book_new();
+  //     XLSX.utils.book_append_sheet(wb, ws, "ManagerTasks");
+  //     const timestamp = new Date().toISOString().split("T")[0];
+  //     XLSX.writeFile(wb, `ManagerTasks_${timestamp}.xlsx`);
+  //     toast.success("Export completed successfully");
+  //   } catch (error) {
+  //     console.error("Export error:", error);
+  //     toast.error("Failed to export data");
+  //   } finally {
+  //     setIsExporting(false);
+  //   }
+  // };
 
   // --- Dynamic Table Headers ---
   const CommonTableHeaders = () => (
@@ -1228,11 +1268,11 @@ const ManagerView = () => {
                     ? "bg-red-100 text-red-700"
                     : assignedByUser.role?.name === "owner"
                       ? "bg-purple-100 text-purple-700"
-                      // : assignedByUser.role?.name === "sr._manager"
-                      //   ? "bg-blue-100 text-blue-700"
-                      //   : assignedByUser.role?.name === "manager"
-                      //     ? "bg-green-100 text-green-700"
-                          : "bg-gray-100 text-gray-700"
+                      : // : assignedByUser.role?.name === "sr._manager"
+                        //   ? "bg-blue-100 text-blue-700"
+                        //   : assignedByUser.role?.name === "manager"
+                        //     ? "bg-green-100 text-green-700"
+                        "bg-gray-100 text-gray-700"
                 }`}
               >
                 {assignedByUser.role?.name}
@@ -1253,11 +1293,11 @@ const ManagerView = () => {
                     ? "bg-red-100 text-red-700"
                     : assignedToUser.role?.name === "owner"
                       ? "bg-purple-100 text-purple-700"
-                      // : assignedToUser.role?.name === "sr._manager"
-                      //   ? "bg-blue-100 text-blue-700"
-                      //   : assignedToUser.role?.name === "manager"
-                      //     ? "bg-green-100 text-green-700"
-                          : "bg-gray-100 text-gray-700"
+                      : // : assignedToUser.role?.name === "sr._manager"
+                        //   ? "bg-blue-100 text-blue-700"
+                        //   : assignedToUser.role?.name === "manager"
+                        //     ? "bg-green-100 text-green-700"
+                        "bg-gray-100 text-gray-700"
                 }`}
               >
                 {assignedToUser.role?.name}

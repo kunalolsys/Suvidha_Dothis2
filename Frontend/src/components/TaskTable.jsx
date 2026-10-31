@@ -76,7 +76,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "./ui/index.jsx";
-import { Tabs as AntdTabs, Input as AntdInput } from "antd";
+import { Tabs as AntdTabs, Input as AntdInput , Select as AntdSelect } from "antd";
 import {
   Dropdown,
   Button as AntdBTN,
@@ -1861,25 +1861,38 @@ const TaskTable = ({
               /> */}
             </div>
             {/* User Filter */}
-            <Select
+            <AntdSelect
+              showSearch
               value={selectedFilterUser}
-              onValueChange={setSelectedFilterUser}
-            >
-              <SelectTrigger className="w-full md:w-[180px]">
-                <SelectValue placeholder="Filter by User" items={users} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">
-                  <Users className="w-4 h-4 mr-2 opacity-50" />
-                  All Users
-                </SelectItem>
-                {users.map((user) => (
-                  <SelectItem key={user._id} value={user._id}>
-                    {user.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              onChange={setSelectedFilterUser}
+              placeholder="Filter by User"
+              style={{ width: 180,height:"40px" }}
+              optionFilterProp="label"
+              filterOption={(input, option) =>
+                (option?.searchLabel ?? "")
+                  .toLowerCase()
+                  .includes(input.toLowerCase())
+              }
+              options={[
+                {
+                  value: "all",
+                  label: (
+                    <span
+                      style={{ display: "flex", alignItems: "center", gap: 6 }}
+                    >
+                      <Users size={14} style={{ opacity: 0.5 }} />
+                      All Users
+                    </span>
+                  ),
+                  searchLabel: "All Users",
+                },
+                ...users.map((user) => ({
+                  value: user._id,
+                  label: user.name,
+                  searchLabel: user.name,
+                })),
+              ]}
+            />
             {/* Status Filter */}
             <Select
               value={selectedFilterStatus}

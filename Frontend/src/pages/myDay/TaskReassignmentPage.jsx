@@ -136,16 +136,31 @@ export default function TaskReassignmentPage() {
   const availableTargetUsers = useMemo(() => {
     if (!toDepartmentId) return [];
 
-    return users.filter((u) => {
-      // Exclude Owner roles & Source User
-      if (u?.role?.name === "Owner") return false;
-      if ((u?._id || u?.id) === fromUserId) return false;
+    const targetDeptStr = String(toDepartmentId);
 
-      // Check if user belongs to selected department
-      const userDepts = Array.isArray(u.department) ? u.department : [];
-      return userDepts.some(
-        (d) => String(d?._id || d) === String(toDepartmentId),
+    return users.filter((u) => {
+      // 1. Exclude Owner role (case-insensitive check)
+      if (u?.role?.name?.toLowerCase() === "owner") return false;
+
+      // 2. Exclude Source User
+      const currentUserId = String(u?._id || u?.id || "");
+      if (currentUserId && currentUserId === String(fromUserId)) return false;
+
+      // 3. Agar user ka department null/undefined hai toh exclude karein
+      if (!u?.department) return false;
+
+      // 4. Department match check (handles both array and single object/ID)
+      if (Array.isArray(u.department)) {
+        return u.department.some(
+          (d) => String(d?._id || d?.id || d) === targetDeptStr,
+        );
+      }
+
+      // Single object ya single ID case
+      const userDeptId = String(
+        u.department?._id || u.department?.id || u.department,
       );
+      return userDeptId === targetDeptStr;
     });
   }, [users, toDepartmentId, fromUserId]);
 

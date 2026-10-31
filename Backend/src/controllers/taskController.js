@@ -3163,6 +3163,414 @@ export const getRoleBasedTasks = handleAsync(async (req, res) => {
   });
 });
 
+export const exportRoleBasedTasks = handleAsync(async (req, res) => {
+  const {
+    userId,
+    role: rawRole,
+    departmentId,
+    search,
+    filters = {},
+    assignedBy,
+    selectedDoer,
+    selectedManager,
+    selectedSrManager,
+    selectedTemplate,
+    taskTypeFilter = "all",
+  } = req.body;
+
+  const role = rawRole ? rawRole.toLowerCase().replace(/\s+/g, "") : "";
+  const { stat, taskCategory, status, taskType } = filters || {};
+
+  const now = new Date();
+  const todayStart = startOfDay(now);
+  const todayEnd = endOfDay(now);
+
+  const moduleSettings = await ModuleSetting.find({
+    moduleKey: { $in: ["FMS_ENGINE", "DO_THIS2"] },
+  }).lean();
+
+  const isModuleEnabled = (key) => {
+    const mod = moduleSettings.find((m) => m.moduleKey === key);
+    return mod ? mod.isEnabled : true;
+  };
+
+  const shouldFetchDoThis =
+    isModuleEnabled("DO_THIS2") &&
+    (taskTypeFilter === "all" || taskTypeFilter === "dothis");
+
+  const shouldFetchFms =
+    isModuleEnabled("FMS_ENGINE") &&
+    (taskTypeFilter === "all" || taskTypeFilter === "fms");
+
+  const query = { isDeleted: { $ne: true } };
+  const andConditions = [];
+
+  /* ---------------------- DO THIS FILTERS ---------------------- */
+  if (shouldFetchDoThis) {
+    if (role === "admin" || role === "owner" || role === "pc" || role === "delegator") {
+      if (selectedDoer && selectedDoer !== "all") {
+        andConditions.push({ assignedTo: selectedDoer });
+      }
+      if (selectedManager && selectedManager !== "all") {
+        andConditions.push({
+          $or: [
+            { assignedBy: selectedManager },
+            { assignedTo: selectedManager },
+          ],
+        });
+      }
+      if (selectedSrManager && selectedSrManager !== "all") {
+        andConditions.push({
+          $or: [
+            { assignedBy: selectedSrManager },
+            { assignedTo: selectedSrManager },
+          ],
+        });
+      }
+    } else if (role === "sr.manager" || role === "srmanager") {
+      const managers = await User.find({ reportingManager: userId }).select("_id").lean();
+      const managerIds = managers.map((m) => m._id);
+
+      const members = await User.find({ reportingManager: { $in: managerIds } }).select("_id").lean();
+      const memberIds = members.map((m) => m._id);
+
+      const allIds = [userId, ...managerIds, ...memberIds];
+      andConditions.push({
+        $or: [{ assignedBy: { $in: allIds } }, { assignedTo: { $in: allIds } }],
+      });
+
+      if (selectedManager && selectedManager !== "all") {
+        andConditions.push({
+          $or: [
+            { assignedBy: selectedManager },
+            { assignedTo: selectedManager },
+          ],
+        });
+      }
+      if (selectedDoer && selectedDoer !== "all") {
+        andConditions.push({ assignedTo: selectedDoer });
+      }
+    } else if (role === "manager") {
+      const memberUsers = await User.find({ reportingManager: userId })
+        .populate("role", "name displayName")
+        .select("_id role")
+        .lean();
+
+      const memberIds = memberUsers
+        .filter((u) => u.role?.name === "Member" || u.role?.name === "Employee")
+        .map((u) => u._id);
+
+      const allIds = [userId, ...memberIds];
+      andConditions.push({
+        $or: [{ assignedBy: { $in: allIds } }, { assignedTo: { $in: allIds } }],
+      });
+
+      if (selectedDoer && selectedDoer !== "all") {
+        andConditions.push({ assignedTo: selectedDoer });
+      }
+    } else {
+      if (userId && mongoose.Types.ObjectId.isValid(userId)) {
+        andConditions.push({ assignedTo: userId });
+      }
+    }
+
+    if (search) {
+      andConditions.push({
+        $or: [{ title: { $regex: search, $options: "i" } }, { TaskId: search }],
+      });
+    }
+
+    if (stat === "overdue") {
+      andConditions.push({
+        $or: [
+          { status: "Overdue" },
+          {
+            dueDate: { $lt: now },
+            status: { $nin: ["Completed", "Stopped", "Not Done"] },
+          },
+          {
+            endDate: { $lt: now },
+            status: { $nin: ["Completed", "Stopped", "Not Done"] },
+          },
+        ],
+      });
+    }
+
+    if (stat === "dueToday") {
+      andConditions.push({ dueDate: { $gte: todayStart, $lte: todayEnd } });
+    }
+
+    if (stat === "completed") {
+      andConditions.push({ status: "Completed" });
+    }
+
+    if (!stat) {
+      if (taskCategory === "today_backlog") {
+        andConditions.push({
+          status: { $in: ["Pending", "Delayed", "Overdue"] },
+          taskType: "DelegationTask",
+          startDate: { $gte: todayStart, $lte: todayEnd },
+        });
+      }
+      if (taskCategory === "upcoming") query.status = "Upcoming";
+      if (taskCategory === "completed") query.status = "Completed";
+    }
+
+    // Status filter (case-safe regex match)
+    if (status && status !== "all") {
+      if (status === "Reopened") {
+        andConditions.push({ isReopen: true });
+      } else {
+        andConditions.push({ status: { $regex: new RegExp(`^${status.trim()}$`, "i") } });
+      }
+    }
+
+    if (taskType === "RecurringTask") {
+      andConditions.push({ taskType: "__NO_TASKS__" });
+    } else if (taskType) {
+      andConditions.push({ taskType });
+    } else {
+      andConditions.push({ taskType: { $ne: "RecurringTask" } });
+    }
+
+    if (assignedBy && mongoose.Types.ObjectId.isValid(assignedBy)) {
+      andConditions.push({ assignedBy });
+    }
+
+    if (andConditions.length > 0) {
+      query.$and = andConditions;
+    }
+  }
+
+  /* ---------------------- FMS FILTERS ---------------------- */
+  const fmsQuery = {
+    isTerminated: { $ne: true },
+    status: { $nin: ["Terminated"] },
+  };
+  const fmsAndConditions = [];
+
+  if (shouldFetchFms) {
+    if (selectedTemplate && selectedTemplate !== "all") {
+      const matchingInstances = await FmsInstance.find({
+        fmsTemplateId: selectedTemplate,
+      })
+        .select("_id")
+        .lean();
+
+      const instanceIds = matchingInstances.map((i) => i._id);
+      fmsAndConditions.push({ fmsInstanceId: { $in: instanceIds } });
+    }
+    if (role === "admin" || role === "owner" || role === "pc" || role === "delegator") {
+      if (selectedDoer && selectedDoer !== "all") {
+        fmsAndConditions.push({ assignedTo: selectedDoer });
+      }
+      if (selectedManager && selectedManager !== "all") {
+        fmsAndConditions.push({
+          $or: [
+            { updatedBy: selectedManager },
+            { assignedTo: selectedManager },
+          ],
+        });
+      }
+      if (selectedSrManager && selectedSrManager !== "all") {
+        fmsAndConditions.push({
+          $or: [
+            { updatedBy: selectedSrManager },
+            { assignedTo: selectedSrManager },
+          ],
+        });
+      }
+    } else if (role === "sr.manager" || role === "srmanager") {
+      const managers = await User.find({ reportingManager: userId }).select("_id").lean();
+      const managerIds = managers.map((m) => m._id);
+
+      const members = await User.find({ reportingManager: { $in: managerIds } }).select("_id").lean();
+      const memberIds = members.map((m) => m._id);
+
+      const allIds = [userId, ...managerIds, ...memberIds];
+      fmsAndConditions.push({ assignedTo: { $in: allIds } });
+    } else if (role === "manager") {
+      const members = await User.find({ reportingManager: userId }).select("_id").lean();
+      const memberIds = members.map((m) => m._id);
+
+      const allIds = [userId, ...memberIds];
+      fmsAndConditions.push({ assignedTo: { $in: allIds } });
+    } else {
+      fmsAndConditions.push({ assignedTo: userId });
+    }
+
+    if (search) {
+      fmsAndConditions.push({
+        $or: [
+          { description: { $regex: search, $options: "i" } },
+          { taskId: search },
+        ],
+      });
+    }
+
+    if (status && status !== "all") {
+      fmsAndConditions.push({ status: { $regex: new RegExp(`^${status.trim()}$`, "i") } });
+    }
+
+    if (stat === "overdue") {
+      fmsAndConditions.push({
+        $or: [
+          { status: "Overdue" },
+          {
+            plannedDueDate: { $lt: now },
+            status: { $nin: ["Completed", "Stopped", "Not Done"] },
+          },
+        ],
+      });
+    }
+
+    if (stat === "dueToday") {
+      fmsAndConditions.push({
+        plannedDueDate: { $gte: todayStart, $lte: todayEnd },
+      });
+    }
+
+    if (!stat) {
+      if (taskCategory === "today_backlog") {
+        fmsAndConditions.push({
+          status: { $in: ["Pending", "Delayed", "Overdue"] },
+          plannedStartDate: { $gte: todayStart, $lte: todayEnd },
+        });
+      }
+      if (taskCategory === "upcoming") fmsAndConditions.push({ status: "Upcoming" });
+      if (taskCategory === "completed") fmsAndConditions.push({ status: "Completed" });
+    }
+
+    if (fmsAndConditions.length > 0) {
+      fmsQuery.$and = fmsAndConditions;
+    }
+  }
+
+  const [tasksResult, fmsTasksResult] = await Promise.all([
+    shouldFetchDoThis
+      ? Task.find(query)
+          .populate("assignedTo", "name email department")
+          .populate("assignedBy", "name email")
+          .populate("departmentOfAssignToUser", "name")
+          .populate("dependencyConfig.taskDependent", "title")
+          .sort({ createdAt: -1 })
+          .lean()
+      : Promise.resolve([]),
+
+    shouldFetchFms
+      ? FmsInstanceTask.find(fmsQuery)
+          .populate("assignedTo", "name email department assignShift")
+          .populate("assignedBy", "name email")
+          .populate("updatedBy", "name email")
+          .populate("departmentOfAssignToUser", "name")
+          .sort({ createdAt: -1 })
+          .lean()
+      : Promise.resolve([]),
+  ]);
+
+  const mappedFmsTasks =
+    shouldFetchFms && Array.isArray(fmsTasksResult)
+      ? fmsTasksResult.map((task) => ({
+          ...task,
+          TaskId: task.taskId || "-",
+          title: task.description || "-",
+          description: task.description || "-",
+          startDate: task.plannedStartDate,
+          dueDate: task.plannedDueDate,
+          status: task.status || "-",
+          assignedTo: task.assignedTo,
+          assignedBy: task.assignedBy || task.updatedBy || null,
+          departmentOfAssignToUser: task.departmentOfAssignToUser,
+          taskType: "FmsInstanceTask",
+          createdAt: task.createdAt,
+        }))
+      : [];
+
+  const mappedTasks =
+    shouldFetchDoThis && Array.isArray(tasksResult)
+      ? tasksResult.map((task) => {
+          const t = typeof normalizeTask === "function" ? normalizeTask(task) : task;
+          return {
+            ...t,
+            TaskId: t.TaskId || t.taskId || "-",
+            title: t.title || "-",
+            startDate: t.startDate,
+            dueDate: t.dueDate || t.endDate,
+            status: t.status || "-",
+            assignedTo: t.assignedTo,
+            assignedBy: t.assignedBy,
+            departmentOfAssignToUser: t.departmentOfAssignToUser,
+            taskType: t.taskType || "DoThis Task",
+            createdAt: t.createdAt,
+          };
+        })
+      : [];
+
+  const allTasks = [...mappedTasks, ...mappedFmsTasks].sort(
+    (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+  );
+
+  // Fallback empty schema headers agar koi record match na kare
+  const defaultHeader = [
+    "Task ID",
+    "Task Title",
+    "Task Type",
+    "Status",
+    "Assigned To",
+    "Assigned By",
+    "Department",
+    "Start Date",
+    "Due Date",
+    "Created At",
+  ];
+
+  let csvContent = "";
+
+  if (allTasks.length === 0) {
+    csvContent = defaultHeader.join(",") + "\r\n";
+  } else {
+    const rows = allTasks.map((item) => ({
+      "Task ID": item.TaskId || "-",
+      "Task Title": (item.title || item.description || "-").replace(/[\r\n]+/g, " "),
+      "Task Type": item.taskType || "-",
+      "Status": item.status || "-",
+      "Assigned To": item.assignedTo?.name
+        ? `${item.assignedTo.name}${item.assignedTo.email ? ` (${item.assignedTo.email})` : ""}`
+        : "-",
+      "Assigned By": item.assignedBy?.name
+        ? `${item.assignedBy.name}${item.assignedBy.email ? ` (${item.assignedBy.email})` : ""}`
+        : "-",
+      "Department":
+        item.departmentOfAssignToUser?.name ||
+        item.assignedTo?.department?.name ||
+        "-",
+      "Start Date": item.startDate
+        ? new Date(item.startDate).toLocaleDateString("en-IN")
+        : "-",
+      "Due Date": item.dueDate
+        ? new Date(item.dueDate).toLocaleDateString("en-IN")
+        : "-",
+      "Created At": item.createdAt
+        ? new Date(item.createdAt).toLocaleDateString("en-IN")
+        : "-",
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    csvContent = XLSX.utils.sheet_to_csv(worksheet);
+  }
+
+  // BOM ko sirf tab include karein jab actual content ho; standard utf-8 binary stream karein
+  const csvBuffer = Buffer.from(csvContent, "utf-8");
+
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename=Tasks_Report_${Date.now()}.csv`
+  );
+  res.setHeader("Content-Length", csvBuffer.length);
+
+  return res.end(csvBuffer);
+});
 // ---------------------------------------------------------
 // GET ALL TASKS
 // ---------------------------------------------------------

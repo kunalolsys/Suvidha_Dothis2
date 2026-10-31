@@ -383,6 +383,46 @@ export const getRoleBasedTasks = createAsyncThunk(
     }
   },
 );
+export const exportRoleBasedTasksThunk = createAsyncThunk(
+  "myTasks/exportRoleBasedTasks",
+  async (params, { rejectWithValue }) => {
+    try {
+      const url = "/tasks/export-task";
+
+      const response = await api.post(url, params, {
+        responseType: "blob",
+        headers: {
+          Accept: "text/csv",
+        },
+      });
+
+      // Error check
+      if (response.data.type === "application/json") {
+        const text = await response.data.text();
+        const json = JSON.parse(text);
+        return rejectWithValue(json.message || "Export failed");
+      }
+
+      // Download CSV
+      const blob = new Blob([response.data], {
+        type: "text/csv;charset=utf-8;",
+      });
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.setAttribute("download", `Tasks_Report_${Date.now()}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+
+      return true;
+    } catch (error) {
+      console.error("Export error:", error);
+      return rejectWithValue(error.response?.data?.message || error.message);
+    }
+  },
+);
 // --- Thunk to fetch Global Counts ---
 export const fetchTaskCounts = createAsyncThunk(
   "myTasks/fetchTaskCounts",

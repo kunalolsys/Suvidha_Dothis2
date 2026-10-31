@@ -90,7 +90,7 @@ import { Label } from "../../components/ui/index.jsx";
 import dayjs from "dayjs";
 import TaskChat from "../../components/TaskChat.jsx";
 import { useSocket } from "../../context/SocketContext.jsx";
-import { Popover } from "antd";
+import { Popover, Select as AntdSelect } from "antd";
 
 // --- Helper Components ---
 
@@ -422,9 +422,7 @@ const FilterBar = ({
         {/* All Sr. Managers Filter */}
         <Select
           value={selectedSrManager}
-          onValueChange={(val) =>
-            handleFilterChange(setSelectedSrManager, val)
-          }
+          onValueChange={(val) => handleFilterChange(setSelectedSrManager, val)}
         >
           <SelectTrigger className="w-full bg-white">
             <SelectValue placeholder="All Sr. Managers" />
@@ -462,24 +460,23 @@ const FilterBar = ({
         </Select>
 
         {/* All Doers Filter */}
-        <Select
-          value={selectedDoer}
-          onValueChange={(val) => handleFilterChange(setSelectedDoer, val)}
-        >
-          <SelectTrigger className="w-full bg-white">
-            <SelectValue placeholder="All Doers" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all" className="font-semibold text-blue-700">
-              All Doers
-            </SelectItem>
-            {doers.map((doer) => (
-              <SelectItem key={doer._id} value={doer._id}>
-                {doer.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <AntdSelect
+          showSearch
+          allowClear
+          placeholder="All Doers"
+          className="w-full"
+          style={{ minWidth: 160 }}
+          value={selectedDoer === "all" ? undefined : selectedDoer}
+          onChange={(val) => handleFilterChange(setSelectedDoer, val || "all")}
+          optionFilterProp="label"
+          options={[
+            { value: "all", label: "All Doers" },
+            ...doers.map((doer) => ({
+              value: doer._id,
+              label: doer.name,
+            })),
+          ]}
+        />
 
         <Select
           value={selectedFilterStatus}
@@ -606,7 +603,7 @@ const PCView = () => {
   const [selectedSrManager, setSelectedSrManager] = useState("all");
   const [selectedAssignor, setSelectedAssignor] = useState("all");
   const [activeTab, setActiveTab] = useState("today");
-  
+
   // ⚡ SUB-TAB ENGINE FILTER ("all" | "dothis" | "fms")
   const [engineViewTab, setEngineViewTab] = useState("all");
 
@@ -970,7 +967,10 @@ const PCView = () => {
         {/* ⚡ RENDER DYNAMIC HEADERS FOR FMS SUBMISSION DATA (ONLY IN FMS SUB-TAB) */}
         {engineViewTab === "fms" &&
           dynamicFmsHeaders.map((headerLabel) => (
-            <TableHead key={headerLabel} className="font-semibold text-blue-700 whitespace-nowrap">
+            <TableHead
+              key={headerLabel}
+              className="font-semibold text-blue-700 whitespace-nowrap"
+            >
               {headerLabel}
             </TableHead>
           ))}
@@ -1098,7 +1098,8 @@ const PCView = () => {
           dynamicFmsHeaders.map((headerLabel) => {
             const matchedField = task.submissionData
               ? Object.values(task.submissionData).find(
-                  (f) => f && f.isTableColumn === true && f.label === headerLabel
+                  (f) =>
+                    f && f.isTableColumn === true && f.label === headerLabel,
                 )
               : null;
 
@@ -1110,7 +1111,10 @@ const PCView = () => {
             }
 
             return (
-              <TableCell key={headerLabel} className="font-medium text-gray-700 whitespace-nowrap">
+              <TableCell
+                key={headerLabel}
+                className="font-medium text-gray-700 whitespace-nowrap"
+              >
                 {String(displayVal)}
               </TableCell>
             );
@@ -1313,13 +1317,14 @@ const PCView = () => {
           <CommonTableHeaders />
           <TableBody>
             {fetchedTasks.length > 0 ? (
-              fetchedTasks.map((task, index) =>
-                renderCommonRow(task, index),
-              )
+              fetchedTasks.map((task, index) => renderCommonRow(task, index))
             ) : (
               <TableRow>
                 <TableCell
-                  colSpan={12 + (engineViewTab === "fms" ? dynamicFmsHeaders.length : 0)}
+                  colSpan={
+                    12 +
+                    (engineViewTab === "fms" ? dynamicFmsHeaders.length : 0)
+                  }
                   className="text-center py-8 text-gray-500"
                 >
                   No tasks found.
