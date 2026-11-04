@@ -81,6 +81,38 @@ const normalizeFrequency = (freq) => {
   if (f.includes("yearly")) return "Yearly";
   return "Weekly";
 };
+// Helper to extract numeric/alphanumeric code from strings like "Nandini ( 3461 )" or "EMP101 - Nandini"
+const extractCode = (str) => {
+  if (!str) return null;
+  const s = String(str).trim();
+  const bracketMatch = s.match(/[\(\[\{]\s*([a-zA-Z0-9_\-]+)\s*[\)\]\}]/);
+  if (bracketMatch) return bracketMatch[1].trim().toLowerCase();
+
+  const dashMatch = s.match(/(?:^|\s+)([a-zA-Z0-9_\-]+)\s*-\s*/);
+  if (dashMatch) return dashMatch[1].trim().toLowerCase();
+
+  return null;
+};
+
+// Safe department ID extractor (handles Object, ObjectId, String, Array)
+const extractDeptId = (dept) => {
+  if (!dept) return null;
+  if (Array.isArray(dept)) {
+    return dept.length > 0 ? dept[0]?._id || dept[0] : null;
+  }
+  return dept?._id || dept;
+};
+
+// Safe department comparator for array or single ObjectId
+const matchUserDepartment = (userDept, targetDeptId) => {
+  if (!userDept || !targetDeptId) return false;
+  const target = String(targetDeptId);
+
+  if (Array.isArray(userDept)) {
+    return userDept.some((d) => String(d?._id || d) === target);
+  }
+  return String(userDept?._id || userDept) === target;
+};
 
 // ==========================================
 // 1. IMPORT DELEGATION TASKS API
@@ -106,19 +138,50 @@ export const importDelegationTasks = handleAsync(async (req, res, next) => {
     }
 
     // In-memory cache for fast lookups
-    const allUsers = await User.find({}, "_id name email department").lean();
+    const allUsers = await User.find(
+      {},
+      "_id name email department empCode employeeId ecode companyCode userId id",
+    ).lean();
     const allDepartments = await Department.find({}, "_id name").lean();
 
-    const userMap = new Map();
+    // Mapping by unique codes
+    const codeMap = new Map();
+    // Grouping users by name to prevent overwriting same names (e.g. nandini & NANDINI)
+    const nameUsersMap = new Map();
+
     allUsers.forEach((u) => {
+      const codes = [
+        u.empCode,
+        u.employeeId,
+        u.ecode,
+        u.companyCode,
+        u.userId,
+        u.id,
+        u.email,
+        extractCode(u.name),
+      ].filter(Boolean);
+
+      codes.forEach((c) => {
+        codeMap.set(String(c).trim().toLowerCase(), u);
+      });
+
       if (u.name) {
         const rawName = String(u.name).trim().toLowerCase();
-        const cleanName = normalizeName(u.name);
+        const cleanName =
+          typeof normalizeName === "function" ? normalizeName(u.name) : rawName;
 
-        userMap.set(rawName, u);
-        if (cleanName && !userMap.has(cleanName)) {
-          userMap.set(cleanName, u);
-        }
+        [rawName, cleanName].filter(Boolean).forEach((nm) => {
+          if (!nameUsersMap.has(nm)) {
+            nameUsersMap.set(nm, []);
+          }
+          if (
+            !nameUsersMap
+              .get(nm)
+              .some((existing) => String(existing._id) === String(u._id))
+          ) {
+            nameUsersMap.get(nm).push(u);
+          }
+        });
       }
     });
 
@@ -126,6 +189,72 @@ export const importDelegationTasks = handleAsync(async (req, res, next) => {
     allDepartments.forEach((d) => {
       if (d.name) deptMap.set(d.name.trim().toLowerCase(), d._id);
     });
+
+    // Code-first user lookup with safe department disambiguation
+    const resolveUser = (
+      rawInput,
+      explicitCode = null,
+      departmentId = null,
+    ) => {
+      if (!rawInput && !explicitCode) return null;
+
+      // Priority 1: Explicit code passed
+      if (
+        explicitCode &&
+        codeMap.has(String(explicitCode).trim().toLowerCase())
+      ) {
+        return codeMap.get(String(explicitCode).trim().toLowerCase());
+      }
+
+      const strInput = String(rawInput || "").trim();
+
+      // Priority 2: Code found inside name bracket (e.g., "Nandini ( 3461 )")
+      const extracted = extractCode(strInput);
+      if (extracted && codeMap.has(extracted)) {
+        return codeMap.get(extracted);
+      }
+      if (codeMap.has(strInput.toLowerCase())) {
+        return codeMap.get(strInput.toLowerCase());
+      }
+
+      // Priority 3: Name group match
+      const rawName = strInput.toLowerCase();
+      const cleanName =
+        typeof normalizeName === "function" ? normalizeName(strInput) : rawName;
+      const matchedList =
+        nameUsersMap.get(cleanName) || nameUsersMap.get(rawName) || [];
+
+      if (matchedList.length === 1) {
+        return matchedList[0];
+      }
+
+      // Priority 4: Duplicate names differentiate by Department
+      if (matchedList.length > 1 && departmentId) {
+        const deptMatch = matchedList.find((u) =>
+          matchUserDepartment(u.department, departmentId),
+        );
+        if (deptMatch) return deptMatch;
+      }
+
+      if (matchedList.length > 0) {
+        return matchedList[0];
+      }
+
+      // Priority 5: Partial name fallback
+      return allUsers.find((u) => {
+        if (!u.name) return false;
+        const dbClean =
+          typeof normalizeName === "function"
+            ? normalizeName(u.name)
+            : u.name.toLowerCase();
+        return (
+          cleanName &&
+          (dbClean === cleanName ||
+            dbClean.startsWith(cleanName) ||
+            cleanName.startsWith(dbClean))
+        );
+      });
+    };
 
     const loggedInId = req.user?._id || req.cookies?.userId;
 
@@ -140,6 +269,12 @@ export const importDelegationTasks = handleAsync(async (req, res, next) => {
         ? String(row["Description"]).trim()
         : "";
       const assignedToRaw = row["Assigned To"] || "";
+      const explicitCode =
+        row["ecode"] ||
+        row["empCode"] ||
+        row["company_code"] ||
+        row["employeeId"] ||
+        "";
       const assignedByRaw = row["Assigned By"] || "";
       const recurringRefId = row["Recurring ID"] || null;
       const startDateRaw = row["Start Date"];
@@ -147,7 +282,6 @@ export const importDelegationTasks = handleAsync(async (req, res, next) => {
       const statusRaw = row["Status"] || "Pending";
       const completeDateRaw = row["Complete Date"];
 
-      // 🔹 If description missing, set title. If title missing, set description.
       if (!description && title) {
         description = title;
       } else if (!title && description) {
@@ -163,23 +297,15 @@ export const importDelegationTasks = handleAsync(async (req, res, next) => {
         continue;
       }
 
-      // Smart User Match (Matches "Sumit Sharma" even if DB has "Sumit Sharma ( 3461 )")
-      const cleanSheetName = normalizeName(assignedToRaw);
-      const rawSheetName = String(assignedToRaw).trim().toLowerCase();
-
-      let user = userMap.get(cleanSheetName) || userMap.get(rawSheetName);
-
-      if (!user && cleanSheetName) {
-        user = allUsers.find((u) => {
-          if (!u.name) return false;
-          const dbClean = normalizeName(u.name);
-          return (
-            dbClean === cleanSheetName ||
-            dbClean.startsWith(cleanSheetName) ||
-            cleanSheetName.startsWith(dbClean)
-          );
-        });
+      // Department Lookup
+      let departmentId = null;
+      if (taskType) {
+        departmentId =
+          deptMap.get(String(taskType).trim().toLowerCase()) || null;
       }
+
+      // Code-First User Match
+      const user = resolveUser(assignedToRaw, explicitCode, departmentId);
 
       if (!user) {
         skippedList.push({
@@ -191,23 +317,17 @@ export const importDelegationTasks = handleAsync(async (req, res, next) => {
         continue;
       }
 
+      // Fallback user's department if sheet department is missing
+      if (!departmentId && user.department) {
+        departmentId = extractDeptId(user.department);
+      }
+
       // Assigned By lookup
       let assignedByUserId = loggedInId || user._id;
       if (assignedByRaw) {
-        const cleanBy = normalizeName(assignedByRaw);
-        const rawBy = String(assignedByRaw).trim().toLowerCase();
-        const assignedByUser = userMap.get(cleanBy) || userMap.get(rawBy);
+        const assignedByUser = resolveUser(assignedByRaw);
         if (assignedByUser) {
           assignedByUserId = assignedByUser._id;
-        }
-      }
-
-      // Department Lookup (Task Type = Department)
-      let departmentId = null;
-      if (taskType) {
-        departmentId = deptMap.get(String(taskType).trim().toLowerCase());
-        if (!departmentId && user.department && user.department.length > 0) {
-          departmentId = user.department[0];
         }
       }
 
@@ -286,7 +406,7 @@ export const importDelegationTasks = handleAsync(async (req, res, next) => {
 });
 
 // ==========================================
-// 2. IMPORT RECURRING TASKS API (FOR NEW MAPPED CSV & XLSX)
+// 2. IMPORT RECURRING TASKS API
 // ==========================================
 export const importRecurringTasks = handleAsync(async (req, res, next) => {
   if (!req.file) {
@@ -324,27 +444,50 @@ export const importRecurringTasks = handleAsync(async (req, res, next) => {
       return next(new AppError("The uploaded file is empty.", 400));
     }
 
-    // Cache Users & Departments (Lookup support by name, email, employeeId, SQL id)
     const allUsers = await User.find(
       {},
-      "_id name email department empCode employeeId userId id",
+      "_id name email department empCode employeeId ecode companyCode userId id",
     ).lean();
     const allDepartments = await Department.find({}, "_id name id").lean();
 
-    const userMap = new Map();
+    const codeMap = new Map();
+    const nameUsersMap = new Map();
+
     allUsers.forEach((u) => {
+      const codes = [
+        u.empCode,
+        u.employeeId,
+        u.ecode,
+        u.companyCode,
+        u.userId,
+        u.id,
+        u.email,
+        extractCode(u.name),
+        String(u._id),
+      ].filter(Boolean);
+
+      codes.forEach((c) => {
+        codeMap.set(String(c).trim().toLowerCase(), u);
+      });
+
       if (u.name) {
-        userMap.set(String(u.name).trim().toLowerCase(), u);
-        const clean = normalizeName(u.name);
-        if (clean) userMap.set(clean, u);
+        const rawName = String(u.name).trim().toLowerCase();
+        const cleanName =
+          typeof normalizeName === "function" ? normalizeName(u.name) : rawName;
+
+        [rawName, cleanName].filter(Boolean).forEach((nm) => {
+          if (!nameUsersMap.has(nm)) {
+            nameUsersMap.set(nm, []);
+          }
+          if (
+            !nameUsersMap
+              .get(nm)
+              .some((existing) => String(existing._id) === String(u._id))
+          ) {
+            nameUsersMap.get(nm).push(u);
+          }
+        });
       }
-      if (u.email) userMap.set(String(u.email).trim().toLowerCase(), u);
-      if (u.empCode) userMap.set(String(u.empCode).trim().toLowerCase(), u);
-      if (u.employeeId)
-        userMap.set(String(u.employeeId).trim().toLowerCase(), u);
-      if (u.userId) userMap.set(String(u.userId).trim().toLowerCase(), u);
-      if (u.id) userMap.set(String(u.id).trim().toLowerCase(), u);
-      userMap.set(String(u._id), u);
     });
 
     const deptMap = new Map();
@@ -354,13 +497,72 @@ export const importRecurringTasks = handleAsync(async (req, res, next) => {
       deptMap.set(String(d._id), d._id);
     });
 
+    const resolveUser = (
+      rawInput,
+      explicitCode = null,
+      departmentId = null,
+    ) => {
+      if (!rawInput && !explicitCode) return null;
+
+      if (
+        explicitCode &&
+        codeMap.has(String(explicitCode).trim().toLowerCase())
+      ) {
+        return codeMap.get(String(explicitCode).trim().toLowerCase());
+      }
+
+      const strInput = String(rawInput || "").trim();
+
+      const extracted = extractCode(strInput);
+      if (extracted && codeMap.has(extracted)) {
+        return codeMap.get(extracted);
+      }
+      if (codeMap.has(strInput.toLowerCase())) {
+        return codeMap.get(strInput.toLowerCase());
+      }
+
+      const rawName = strInput.toLowerCase();
+      const cleanName =
+        typeof normalizeName === "function" ? normalizeName(strInput) : rawName;
+      const matchedList =
+        nameUsersMap.get(cleanName) || nameUsersMap.get(rawName) || [];
+
+      if (matchedList.length === 1) {
+        return matchedList[0];
+      }
+
+      if (matchedList.length > 1 && departmentId) {
+        const deptMatch = matchedList.find((u) =>
+          matchUserDepartment(u.department, departmentId),
+        );
+        if (deptMatch) return deptMatch;
+      }
+
+      if (matchedList.length > 0) {
+        return matchedList[0];
+      }
+
+      return allUsers.find((u) => {
+        if (!u.name) return false;
+        const dbClean =
+          typeof normalizeName === "function"
+            ? normalizeName(u.name)
+            : u.name.toLowerCase();
+        return (
+          cleanName &&
+          (dbClean === cleanName ||
+            dbClean.startsWith(cleanName) ||
+            cleanName.startsWith(dbClean))
+        );
+      });
+    };
+
     const loggedInId = req.user?._id || req.cookies?.userId;
 
     let rowNumber = 1;
     for (const row of rows) {
       rowNumber++;
 
-      // Columns extraction (Priority given to new mapped columns: username & department_name)
       const rawTaskId = row["taskid"] || row["Task ID"] || row["TaskId"];
       const rawDept =
         row["department_name"] || row["department"] || row["Task Type"] || "";
@@ -368,6 +570,12 @@ export const importRecurringTasks = handleAsync(async (req, res, next) => {
       let description = row["taskdesc"] || row["Description"] || "";
       const assignedToRaw =
         row["username"] || row["task_asign_to"] || row["Assigned To"] || "";
+      const explicitCode =
+        row["ecode"] ||
+        row["empCode"] ||
+        row["company_code"] ||
+        row["employeeId"] ||
+        "";
       const assignedByRaw = row["task_asign_by"] || row["Assigned By"] || "";
       const frequencyRaw = row["frequency"] || row["Frequency"] || "Weekly";
       const dayRaw = row["day"] || row["Day"] || "";
@@ -378,7 +586,6 @@ export const importRecurringTasks = handleAsync(async (req, res, next) => {
       title = title ? String(title).trim() : "";
       description = description ? String(description).trim() : "";
 
-      // 🔹 If description is missing then insert title in description
       if (!description && title) {
         description = title;
       } else if (!title && description) {
@@ -394,23 +601,14 @@ export const importRecurringTasks = handleAsync(async (req, res, next) => {
         continue;
       }
 
-      // Smart User Match using the mapped username
-      const cleanSheetUser = normalizeName(assignedToRaw);
-      const rawSheetUser = String(assignedToRaw).trim().toLowerCase();
-
-      let user = userMap.get(cleanSheetUser) || userMap.get(rawSheetUser);
-
-      if (!user && cleanSheetUser) {
-        user = allUsers.find((u) => {
-          if (!u.name) return false;
-          const dbClean = normalizeName(u.name);
-          return (
-            dbClean === cleanSheetUser ||
-            dbClean.startsWith(cleanSheetUser) ||
-            cleanSheetUser.startsWith(dbClean)
-          );
-        });
+      let departmentId = null;
+      if (rawDept) {
+        departmentId =
+          deptMap.get(String(rawDept).trim().toLowerCase()) || null;
       }
+
+      // Code-First User Match
+      const user = resolveUser(assignedToRaw, explicitCode, departmentId);
 
       if (!user) {
         skippedList.push({
@@ -422,27 +620,18 @@ export const importRecurringTasks = handleAsync(async (req, res, next) => {
         continue;
       }
 
-      // Assigned By / Created By user setup
+      if (!departmentId && user.department) {
+        departmentId = extractDeptId(user.department);
+      }
+
       let assignedByUserId = loggedInId || user._id;
       if (assignedByRaw) {
-        const cleanBy = normalizeName(assignedByRaw);
-        const rawBy = String(assignedByRaw).trim().toLowerCase();
-        const byUser = userMap.get(cleanBy) || userMap.get(rawBy);
+        const byUser = resolveUser(assignedByRaw);
         if (byUser) {
           assignedByUserId = byUser._id;
         }
       }
 
-      // Department mapping
-      let departmentId = null;
-      if (rawDept) {
-        departmentId = deptMap.get(String(rawDept).trim().toLowerCase());
-      }
-      if (!departmentId && user.department && user.department.length > 0) {
-        departmentId = user.department[0];
-      }
-
-      // Week Days formatting
       const weekDays =
         dayRaw && dayRaw !== "NULL"
           ? String(dayRaw)
@@ -472,7 +661,10 @@ export const importRecurringTasks = handleAsync(async (req, res, next) => {
         assignedBy: assignedByUserId,
         createdBy: loggedInId || assignedByUserId,
         departmentOfAssignToUser: departmentId,
-        frequency: normalizeFrequency(frequencyRaw),
+        frequency:
+          typeof normalizeFrequency === "function"
+            ? normalizeFrequency(frequencyRaw)
+            : frequencyRaw,
         weekDays: weekDays,
         startDate: parsedStartDate,
         plannedStartDate: parsedStartDate,
