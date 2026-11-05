@@ -816,7 +816,6 @@ const FilterBar = ({
   </div>
 );
 
-// --- Helper: Main Table ---
 const TodayTasksTable = ({
   tasks,
   upcomingRecurringTasks,
@@ -864,11 +863,22 @@ const TodayTasksTable = ({
     );
   };
 
-  // 3. Frontend Sorting
+  // 3. Frontend Sorting (Date + Status String Support)
   const sortedTasks = useMemo(() => {
     if (!sortConfig.key) return combinedTasks;
 
     return [...combinedTasks].sort((a, b) => {
+      // 🟢 Agar status column par sort ho raha ho
+      if (sortConfig.key === "status") {
+        const valA = (a.status || "").toLowerCase();
+        const valB = (b.status || "").toLowerCase();
+
+        return sortConfig.direction === "asc"
+          ? valA.localeCompare(valB)
+          : valB.localeCompare(valA);
+      }
+
+      // 🟢 Date columns (startDate, dueDate) ke liye
       const valA = a[sortConfig.key]
         ? new Date(a[sortConfig.key]).getTime()
         : 0;
@@ -889,7 +899,18 @@ const TodayTasksTable = ({
           <TableRow>
             <TableHead>Sr. No.</TableHead>
             <TableHead>Task Id</TableHead>
-            <TableHead>Status</TableHead>
+
+            {/* 🟢 Clickable Status Header with Sort */}
+            <TableHead
+              className="cursor-pointer select-none hover:bg-gray-100 transition-colors"
+              onClick={() => handleSort("status")}
+            >
+              <div className="flex items-center">
+                <span>Status</span>
+                {getSortIcon("status")}
+              </div>
+            </TableHead>
+
             {canUpdate && <TableHead>Actions</TableHead>}
             <TableHead>Task Title</TableHead>
             <TableHead>Assigned By</TableHead>

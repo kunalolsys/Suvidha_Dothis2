@@ -28,6 +28,9 @@ import {
   RotateCcw,
   Layers,
   Zap,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 
@@ -1092,14 +1095,80 @@ const ManagerView = () => {
   //     setIsExporting(false);
   //   }
   // };
+  // 1. Sorting State
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: "asc" });
 
+  // 2. Toggle Handler
+  const handleSort = (columnKey) => {
+    let direction = "asc";
+    if (sortConfig.key === columnKey && sortConfig.direction === "asc") {
+      direction = "desc";
+    }
+    setSortConfig({ key: columnKey, direction });
+  };
+
+  // 3. Dynamic Sort Icon
+  const getSortIcon = (columnKey) => {
+    if (sortConfig.key !== columnKey) {
+      return (
+        <ArrowUpDown className="h-3.5 w-3.5 text-gray-400 opacity-60 ml-1 inline" />
+      );
+    }
+    return sortConfig.direction === "asc" ? (
+      <ArrowUp className="h-3.5 w-3.5 text-blue-600 ml-1 inline" />
+    ) : (
+      <ArrowDown className="h-3.5 w-3.5 text-blue-600 ml-1 inline" />
+    );
+  };
+
+  // 4. Sorted Data Array (Status string aur Date timestamps dono handle karta hai)
+  const sortedTasks = useMemo(() => {
+    const list = [...(fetchedTasks || [])];
+
+    if (!sortConfig.key) return list;
+
+    return list.sort((a, b) => {
+      // Status sort
+      if (sortConfig.key === "status") {
+        const valA = (a.status || "").toLowerCase();
+        const valB = (b.status || "").toLowerCase();
+        return sortConfig.direction === "asc"
+          ? valA.localeCompare(valB)
+          : valB.localeCompare(valA);
+      }
+
+      // Dates sort (startDate, dueDate)
+      const valA = a[sortConfig.key]
+        ? new Date(a[sortConfig.key]).getTime()
+        : 0;
+      const valB = b[sortConfig.key]
+        ? new Date(b[sortConfig.key]).getTime()
+        : 0;
+
+      if (valA < valB) return sortConfig.direction === "asc" ? -1 : 1;
+      if (valA > valB) return sortConfig.direction === "asc" ? 1 : -1;
+      return 0;
+    });
+  }, [fetchedTasks, sortConfig]);
+  // --- Dynamic Table Headers ---
   // --- Dynamic Table Headers ---
   const CommonTableHeaders = () => (
     <TableHeader>
       <TableRow>
         <TableHead>Sr. No.</TableHead>
         <TableHead>Task Id</TableHead>
-        <TableHead>Status</TableHead>
+
+        {/* 🟢 Clickable Status Header */}
+        <TableHead
+          className="cursor-pointer select-none hover:bg-gray-100 transition-colors"
+          onClick={() => handleSort("status")}
+        >
+          <div className="flex items-center">
+            <span>Status</span>
+            {getSortIcon("status")}
+          </div>
+        </TableHead>
+
         <TableHead>Actions</TableHead>
         <TableHead>Task Title</TableHead>
         <TableHead>Description</TableHead>
@@ -1118,8 +1187,29 @@ const ManagerView = () => {
         <TableHead>Assigned To</TableHead>
         <TableHead>Type</TableHead>
         <TableHead>Attachment</TableHead>
-        <TableHead>Start Date & Time</TableHead>
-        <TableHead>Due Date & Time</TableHead>
+
+        {/* 🟢 Clickable Start Date Header */}
+        <TableHead
+          className="cursor-pointer select-none hover:bg-gray-100 transition-colors"
+          onClick={() => handleSort("startDate")}
+        >
+          <div className="flex items-center">
+            <span>Start Date & Time</span>
+            {getSortIcon("startDate")}
+          </div>
+        </TableHead>
+
+        {/* 🟢 Clickable Due Date Header */}
+        <TableHead
+          className="cursor-pointer select-none hover:bg-gray-100 transition-colors"
+          onClick={() => handleSort("dueDate")}
+        >
+          <div className="flex items-center">
+            <span>Due Date & Time</span>
+            {getSortIcon("dueDate")}
+          </div>
+        </TableHead>
+
         <TableHead>Time left</TableHead>
       </TableRow>
     </TableHeader>
@@ -1471,8 +1561,9 @@ const ManagerView = () => {
         <Table>
           <CommonTableHeaders />
           <TableBody>
-            {fetchedTasks.length > 0 ? (
-              fetchedTasks.map((task, index) => renderCommonRow(task, index))
+            {/* 🟢 Yahan sortedTasks use karein */}
+            {sortedTasks.length > 0 ? (
+              sortedTasks.map((task, index) => renderCommonRow(task, index))
             ) : (
               <TableRow>
                 <TableCell
