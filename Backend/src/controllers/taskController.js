@@ -8,6 +8,7 @@ import {
   format,
   addDays,
   addWeeks,
+  differenceInCalendarDays,
 } from "date-fns";
 import mongoose from "mongoose";
 import AppError from "../utils/AppError.js";
@@ -54,7 +55,10 @@ import { generateRecurringTasks } from "../cron/assignRecurringTask.js";
 import { taskAssignedTemplate } from "../services/templates/taskAssignedTemp.js";
 import { sendNotification } from "../services/telegram/services/taskTelegramService.js";
 import FmsInstance from "../models/FmsInstance.js";
-import { calculateCalendarDurationWithShiftSnap,parseFrequencyToHours } from "../utils/fmsDateCalculator.js";
+import {
+  calculateCalendarDurationWithShiftSnap,
+  parseFrequencyToHours,
+} from "../utils/fmsDateCalculator.js";
 
 // Helper: Parse Date to IST safely handling strings
 function parseDateIST(dateStr) {
@@ -260,8 +264,8 @@ export const createTask = handleAsync(async (req, res, next) => {
         typeof checklist === "string"
           ? JSON.parse(checklist)
           : Array.isArray(checklist)
-          ? checklist
-          : [];
+            ? checklist
+            : [];
     } catch (error) {
       parsedChecklist = [];
     }
@@ -290,7 +294,8 @@ export const createTask = handleAsync(async (req, res, next) => {
 
   // 3. LOOP PER ASSIGNEE - FMS ENGINE PIPELINE
   for (const assigneeId of validAssigneeIds) {
-    const assignedUser = await User.findById(assigneeId).populate("assignShift");
+    const assignedUser =
+      await User.findById(assigneeId).populate("assignShift");
     if (!assignedUser) {
       return next(new AppError(`User with ID ${assigneeId} not found`, 404));
     }
@@ -340,9 +345,12 @@ export const createTask = handleAsync(async (req, res, next) => {
       }
 
       if (parent) {
-        const assignedParentUser = await User.findById(parent.assignedTo).populate("assignShift");
+        const assignedParentUser = await User.findById(
+          parent.assignedTo,
+        ).populate("assignShift");
         const parentWorkShift = assignedParentUser?.assignShift;
-        const isSameShift = String(workShift?._id) === String(parentWorkShift?._id);
+        const isSameShift =
+          String(workShift?._id) === String(parentWorkShift?._id);
 
         const parentStart = parent.startDate || parent.plannedStartDate;
         const parentDue = parent.dueDate || parent.plannedDueDate;
@@ -351,8 +359,8 @@ export const createTask = handleAsync(async (req, res, next) => {
         let taskStartDate = parentDue
           ? new Date(parentDue)
           : parentStart
-          ? new Date(parentStart)
-          : new Date();
+            ? new Date(parentStart)
+            : new Date();
 
         // Working Day / Shift Validation
         const isWorking = await isWorkingDay(taskStartDate, workShift, deptId);
@@ -369,14 +377,16 @@ export const createTask = handleAsync(async (req, res, next) => {
             nextDay,
             workShift._id,
             {},
-            deptId
+            deptId,
           );
 
           taskStartDate = snapToShiftTime(nextWorkingShift, workShift, true);
         }
 
         // 🟢 FIX 1: Parse Frequency with Positive Value Guarantee
-        const rawFreq = (dependencyData.isDependentFrequency || "").toLowerCase();
+        const rawFreq = (
+          dependencyData.isDependentFrequency || ""
+        ).toLowerCase();
         const rawX = Math.abs(Number(dependencyData.xValue) || 0);
         const isDayFreq = rawFreq.includes("day") || rawFreq.includes("d");
 
@@ -390,7 +400,7 @@ export const createTask = handleAsync(async (req, res, next) => {
           taskStartDate,
           freqParsed,
           workShift._id,
-          deptId
+          deptId,
         );
 
         dates = {
@@ -403,16 +413,16 @@ export const createTask = handleAsync(async (req, res, next) => {
           childStart: dates.startDate,
           childDue: dates.dueDate,
           xValue: rawX,
-          isDay: isDayFreq
+          isDay: isDayFreq,
         });
       }
-    } 
+    }
     // =========================================================================
     // 🟢 CASE B: ACTUAL-TO-PLANNED (WAITING FOR PARENT)
     // =========================================================================
     else if (isActualToPlanned) {
       dates = { startDate: null, dueDate: null };
-    } 
+    }
     // =========================================================================
     // 🟢 CASE C: NON-DEPENDENT STANDARD TASK
     // =========================================================================
@@ -448,7 +458,7 @@ export const createTask = handleAsync(async (req, res, next) => {
           nextDay,
           workShift._id,
           {},
-          deptId
+          deptId,
         );
 
         taskStartDate = snapToShiftTime(nextWorkingShift, workShift, true);
@@ -463,9 +473,9 @@ export const createTask = handleAsync(async (req, res, next) => {
           taskStartDate,
           endDaysParsed,
           workShift._id,
-          deptId
+          deptId,
         );
-      } 
+      }
       // 2. Direct Due Date di gayi ho
       else if (cleanField(dueDate)) {
         calculatedDue = parseDateIST(dueDate);
@@ -554,7 +564,10 @@ export const createTask = handleAsync(async (req, res, next) => {
           }
         } catch (error) {
           if (typeof weekDays === "string") {
-            days = weekDays.split(",").map((d) => d.trim()).filter(Boolean);
+            days = weekDays
+              .split(",")
+              .map((d) => d.trim())
+              .filter(Boolean);
           }
         }
         if (Array.isArray(days)) {
@@ -834,7 +847,12 @@ export const getAllTasksWithStats = async (req, res) => {
     // =========================
     const andConditions = [];
 
-    if (role === "admin" || role === "owner" || role === "pc"|| role === "delegator") {
+    if (
+      role === "admin" ||
+      role === "owner" ||
+      role === "pc" ||
+      role === "delegator"
+    ) {
       // Full access → no restriction
     } else if (role === "sr.manager" || role === "srmanager") {
       const srManagerId = userId;
@@ -2372,11 +2390,11 @@ export const exportMYTasks = handleAsync(async (req, res) => {
         createdAt: task.createdAt,
       }))
     : [];
-  let allTasks = [...mappedFmsTasks];
-
-  const totalTasks = allTasks.length;
-
-  const finalData = [...allTasks];
+ let allTasks = [...tasks, ...mappedFmsTasks];
+if (taskCategory === "upcoming") {
+  allTasks.push(...finalVirtualRecurring);
+}
+const finalData = [...allTasks];
 
   res.json({
     success: true,
@@ -2840,7 +2858,12 @@ export const getRoleBasedTasks = handleAsync(async (req, res) => {
   const andConditions = [];
 
   if (shouldFetchDoThis) {
-    if (role === "admin" || role === "owner" || role === "pc" || role === "delegator") {
+    if (
+      role === "admin" ||
+      role === "owner" ||
+      role === "pc" ||
+      role === "delegator"
+    ) {
       if (selectedDoer && selectedDoer !== "all") {
         andConditions.push({ assignedTo: selectedDoer });
       }
@@ -2894,7 +2917,7 @@ export const getRoleBasedTasks = handleAsync(async (req, res) => {
         .lean();
 
       const memberIds = memberUsers
-        .filter((u) => u.role?.name === "Member"||u.role?.name === "Employee")
+        .filter((u) => u.role?.name === "Member" || u.role?.name === "Employee")
         .map((u) => u._id);
 
       const allIds = [userId, ...memberIds];
@@ -2996,7 +3019,12 @@ export const getRoleBasedTasks = handleAsync(async (req, res) => {
       const instanceIds = matchingInstances.map((i) => i._id);
       fmsAndConditions.push({ fmsInstanceId: { $in: instanceIds } });
     }
-    if (role === "admin" || role === "owner" || role === "pc" || role === "delegator") {
+    if (
+      role === "admin" ||
+      role === "owner" ||
+      role === "pc" ||
+      role === "delegator"
+    ) {
       if (selectedDoer && selectedDoer !== "all") {
         fmsAndConditions.push({ assignedTo: selectedDoer });
       }
@@ -3207,7 +3235,12 @@ export const exportRoleBasedTasks = handleAsync(async (req, res) => {
 
   /* ---------------------- DO THIS FILTERS ---------------------- */
   if (shouldFetchDoThis) {
-    if (role === "admin" || role === "owner" || role === "pc" || role === "delegator") {
+    if (
+      role === "admin" ||
+      role === "owner" ||
+      role === "pc" ||
+      role === "delegator"
+    ) {
       if (selectedDoer && selectedDoer !== "all") {
         andConditions.push({ assignedTo: selectedDoer });
       }
@@ -3228,10 +3261,14 @@ export const exportRoleBasedTasks = handleAsync(async (req, res) => {
         });
       }
     } else if (role === "sr.manager" || role === "srmanager") {
-      const managers = await User.find({ reportingManager: userId }).select("_id").lean();
+      const managers = await User.find({ reportingManager: userId })
+        .select("_id")
+        .lean();
       const managerIds = managers.map((m) => m._id);
 
-      const members = await User.find({ reportingManager: { $in: managerIds } }).select("_id").lean();
+      const members = await User.find({ reportingManager: { $in: managerIds } })
+        .select("_id")
+        .lean();
       const memberIds = members.map((m) => m._id);
 
       const allIds = [userId, ...managerIds, ...memberIds];
@@ -3321,7 +3358,9 @@ export const exportRoleBasedTasks = handleAsync(async (req, res) => {
       if (status === "Reopened") {
         andConditions.push({ isReopen: true });
       } else {
-        andConditions.push({ status: { $regex: new RegExp(`^${status.trim()}$`, "i") } });
+        andConditions.push({
+          status: { $regex: new RegExp(`^${status.trim()}$`, "i") },
+        });
       }
     }
 
@@ -3360,7 +3399,12 @@ export const exportRoleBasedTasks = handleAsync(async (req, res) => {
       const instanceIds = matchingInstances.map((i) => i._id);
       fmsAndConditions.push({ fmsInstanceId: { $in: instanceIds } });
     }
-    if (role === "admin" || role === "owner" || role === "pc" || role === "delegator") {
+    if (
+      role === "admin" ||
+      role === "owner" ||
+      role === "pc" ||
+      role === "delegator"
+    ) {
       if (selectedDoer && selectedDoer !== "all") {
         fmsAndConditions.push({ assignedTo: selectedDoer });
       }
@@ -3381,16 +3425,22 @@ export const exportRoleBasedTasks = handleAsync(async (req, res) => {
         });
       }
     } else if (role === "sr.manager" || role === "srmanager") {
-      const managers = await User.find({ reportingManager: userId }).select("_id").lean();
+      const managers = await User.find({ reportingManager: userId })
+        .select("_id")
+        .lean();
       const managerIds = managers.map((m) => m._id);
 
-      const members = await User.find({ reportingManager: { $in: managerIds } }).select("_id").lean();
+      const members = await User.find({ reportingManager: { $in: managerIds } })
+        .select("_id")
+        .lean();
       const memberIds = members.map((m) => m._id);
 
       const allIds = [userId, ...managerIds, ...memberIds];
       fmsAndConditions.push({ assignedTo: { $in: allIds } });
     } else if (role === "manager") {
-      const members = await User.find({ reportingManager: userId }).select("_id").lean();
+      const members = await User.find({ reportingManager: userId })
+        .select("_id")
+        .lean();
       const memberIds = members.map((m) => m._id);
 
       const allIds = [userId, ...memberIds];
@@ -3409,7 +3459,9 @@ export const exportRoleBasedTasks = handleAsync(async (req, res) => {
     }
 
     if (status && status !== "all") {
-      fmsAndConditions.push({ status: { $regex: new RegExp(`^${status.trim()}$`, "i") } });
+      fmsAndConditions.push({
+        status: { $regex: new RegExp(`^${status.trim()}$`, "i") },
+      });
     }
 
     if (stat === "overdue") {
@@ -3437,8 +3489,10 @@ export const exportRoleBasedTasks = handleAsync(async (req, res) => {
           plannedStartDate: { $gte: todayStart, $lte: todayEnd },
         });
       }
-      if (taskCategory === "upcoming") fmsAndConditions.push({ status: "Upcoming" });
-      if (taskCategory === "completed") fmsAndConditions.push({ status: "Completed" });
+      if (taskCategory === "upcoming")
+        fmsAndConditions.push({ status: "Upcoming" });
+      if (taskCategory === "completed")
+        fmsAndConditions.push({ status: "Completed" });
     }
 
     if (fmsAndConditions.length > 0) {
@@ -3489,7 +3543,8 @@ export const exportRoleBasedTasks = handleAsync(async (req, res) => {
   const mappedTasks =
     shouldFetchDoThis && Array.isArray(tasksResult)
       ? tasksResult.map((task) => {
-          const t = typeof normalizeTask === "function" ? normalizeTask(task) : task;
+          const t =
+            typeof normalizeTask === "function" ? normalizeTask(task) : task;
           return {
             ...t,
             TaskId: t.TaskId || t.taskId || "-",
@@ -3507,7 +3562,7 @@ export const exportRoleBasedTasks = handleAsync(async (req, res) => {
       : [];
 
   const allTasks = [...mappedTasks, ...mappedFmsTasks].sort(
-    (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+    (a, b) => new Date(b.createdAt) - new Date(a.createdAt),
   );
 
   // Fallback empty schema headers agar koi record match na kare
@@ -3531,16 +3586,19 @@ export const exportRoleBasedTasks = handleAsync(async (req, res) => {
   } else {
     const rows = allTasks.map((item) => ({
       "Task ID": item.TaskId || "-",
-      "Task Title": (item.title || item.description || "-").replace(/[\r\n]+/g, " "),
+      "Task Title": (item.title || item.description || "-").replace(
+        /[\r\n]+/g,
+        " ",
+      ),
       "Task Type": item.taskType || "-",
-      "Status": item.status || "-",
+      Status: item.status || "-",
       "Assigned To": item.assignedTo?.name
         ? `${item.assignedTo.name}${item.assignedTo.email ? ` (${item.assignedTo.email})` : ""}`
         : "-",
       "Assigned By": item.assignedBy?.name
         ? `${item.assignedBy.name}${item.assignedBy.email ? ` (${item.assignedBy.email})` : ""}`
         : "-",
-      "Department":
+      Department:
         item.departmentOfAssignToUser?.name ||
         item.assignedTo?.department?.name ||
         "-",
@@ -3565,7 +3623,7 @@ export const exportRoleBasedTasks = handleAsync(async (req, res) => {
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
   res.setHeader(
     "Content-Disposition",
-    `attachment; filename=Tasks_Report_${Date.now()}.csv`
+    `attachment; filename=Tasks_Report_${Date.now()}.csv`,
   );
   res.setHeader("Content-Length", csvBuffer.length);
 
@@ -3588,8 +3646,9 @@ export const getAllTasks = handleAsync(async (req, res, next) => {
     page = 1,
     limit = 10,
     taskCategory,
-    type,
+    type, // "DelegationTask" ya "RecurringTask"
   } = req.query;
+
   const skip = (parseInt(page) - 1) * parseInt(limit);
   let tasks = [];
   let total = 0;
@@ -3604,17 +3663,37 @@ export const getAllTasks = handleAsync(async (req, res, next) => {
   );
 
   const roleName = loggedInUser?.role?.name?.toLowerCase();
-
   const isSuperUser = roleName === "admin" || roleName === "owner";
 
   if (!isSuperUser) {
     filterQuery.createdBy = loggedInUserId;
   }
+
+  // --- TAB KE HISAB SE ALAG PAGINATION AUR FILTER (FIX) ---
+  if (type) {
+    if (type === "DelegationTask") {
+      filterQuery.$or = [
+        { taskType: "DelegationTask" },
+        { taskType: { $exists: false } },
+        { recurrenceFrequency: { $exists: false } },
+      ];
+    } else if (type === "RecurringTask") {
+      filterQuery.taskType = "RecurringTask";
+    }
+  }
+
   if (creatorOrAssignorId) {
-    filterQuery.$or = [
+    const creatorFilter = [
       { createdBy: creatorOrAssignorId },
       { assignedBy: creatorOrAssignorId },
     ];
+    if (filterQuery.$or) {
+      filterQuery.$and = filterQuery.$and || [];
+      filterQuery.$and.push({ $or: filterQuery.$or }, { $or: creatorFilter });
+      delete filterQuery.$or;
+    } else {
+      filterQuery.$or = creatorFilter;
+    }
   } else {
     if (departmentId && mongoose.Types.ObjectId.isValid(departmentId)) {
       const usersInDept = await User.find({ department: departmentId }).select(
@@ -3623,12 +3702,13 @@ export const getAllTasks = handleAsync(async (req, res, next) => {
       const userIds = usersInDept.map((u) => u._id);
 
       if (userId && mongoose.Types.ObjectId.isValid(userId)) {
-        if (userIds.some((id) => id.equals(userId)))
+        if (userIds.some((id) => id.equals(userId))) {
           filterQuery.assignedTo = userId;
-        else
+        } else {
           return res
             .status(200)
             .json({ success: true, data: [], totalTasks: 0 });
+        }
       } else {
         filterQuery.assignedTo = { $in: userIds };
       }
@@ -3638,6 +3718,7 @@ export const getAllTasks = handleAsync(async (req, res, next) => {
 
     if (createdBy) filterQuery.createdBy = createdBy;
   }
+
   if (taskCategory) {
     let categoryFilter = {};
 
@@ -3668,23 +3749,10 @@ export const getAllTasks = handleAsync(async (req, res, next) => {
       categoryFilter.status = "Completed";
     }
 
-    if (type) {
-      if (categoryFilter.$and) {
-        categoryFilter.$and.push({ taskType: type });
-      } else {
-        categoryFilter = {
-          $and: [categoryFilter, { taskType: type }],
-        };
-      }
-    }
-
-    if (Object.keys(filterQuery).length > 0) {
-      filterQuery.$and = filterQuery.$and || [];
-      filterQuery.$and.push(categoryFilter);
-    } else {
-      Object.assign(filterQuery, categoryFilter);
-    }
+    filterQuery.$and = filterQuery.$and || [];
+    filterQuery.$and.push(categoryFilter);
   }
+
   if (dateFilter) {
     if (dateFilter === "overdue") {
       filterQuery.dueDate = { $lt: today };
@@ -3697,48 +3765,33 @@ export const getAllTasks = handleAsync(async (req, res, next) => {
   }
 
   if (status && status !== "all") {
-    filterQuery.status = status;
+    // Case-insensitive regex match (taaki 'pending' aur 'Pending' dono match ho sake)
+    filterQuery.status = { $regex: new RegExp(`^${status}$`, "i") };
   }
+
+  let finalQuery = filterQuery;
 
   if (search) {
     const searchQuery = {
       $or: [{ title: { $regex: search, $options: "i" } }, { TaskId: search }],
     };
 
-    let finalQuery;
-    if (filterQuery.$or) {
-      finalQuery = { $and: [filterQuery, searchQuery] };
-    } else {
-      finalQuery = { ...filterQuery, ...searchQuery };
-    }
-    if (query.status !== "Upcoming") {
-      finalQuery.isVisible = true;
-    }
-    total = await Task.countDocuments(finalQuery);
-
-    const rawTasks = await Task.find(finalQuery)
-      .populate("assignedTo", "name email department")
-      .populate("assignedBy", "name email")
-      .populate("departmentOfAssignToUser", "name")
-      .populate("dependencyConfig.taskDependent", "title")
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(parseInt(limit));
-
-    tasks = rawTasks.map(normalizeTask);
-  } else {
-    const rawTasks = await Task.find(filterQuery)
-      .populate("assignedTo", "name email department")
-      .populate("assignedBy", "name email")
-      .populate("departmentOfAssignToUser", "name")
-      .populate("dependencyConfig.taskDependent", "title")
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(parseInt(limit));
-
-    tasks = rawTasks.map(normalizeTask);
-    total = await Task.countDocuments(filterQuery);
+    finalQuery = { $and: [filterQuery, searchQuery] };
   }
+
+  // Count aur query execution
+  total = await Task.countDocuments(finalQuery);
+
+  const rawTasks = await Task.find(finalQuery)
+    .populate("assignedTo", "name email department")
+    .populate("assignedBy", "name email")
+    .populate("departmentOfAssignToUser", "name")
+    .populate("dependencyConfig.taskDependent", "title")
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(parseInt(limit));
+
+  tasks = rawTasks.map(normalizeTask);
 
   res.status(200).json({
     success: true,
@@ -4048,7 +4101,7 @@ export const toggleTaskCompletion = handleAsync(async (req, res, next) => {
         const isTodayWorking = await isWorkingDay(
           childStart,
           workShift,
-          targetChildDeptId
+          targetChildDeptId,
         );
         const isTodayHoli = await isHoliday(childStart, targetChildDeptId);
         const shiftEnd = snapToShiftTime(childStart, workShift, false);
@@ -4063,7 +4116,7 @@ export const toggleTaskCompletion = handleAsync(async (req, res, next) => {
             nextDay,
             workShift._id,
             {},
-            targetChildDeptId
+            targetChildDeptId,
           );
 
           childStart = snapToShiftTime(nextWorkingShift, workShift, true);
@@ -4072,7 +4125,7 @@ export const toggleTaskCompletion = handleAsync(async (req, res, next) => {
         // FMS Frequency Parser ({ isDay: boolean, value: number })
         const freqParsed = parseFrequencyToHours(
           depTask.dependencyConfig?.isDependentFrequency,
-          depTask.dependencyConfig?.xValue
+          depTask.dependencyConfig?.xValue,
         );
 
         // Forward Lag Duration always positive
@@ -4083,7 +4136,7 @@ export const toggleTaskCompletion = handleAsync(async (req, res, next) => {
           childStart,
           freqParsed,
           workShift._id,
-          targetChildDeptId
+          targetChildDeptId,
         );
 
         // Calculate taskEndDays & taskEndTime
@@ -4108,7 +4161,7 @@ export const toggleTaskCompletion = handleAsync(async (req, res, next) => {
             Math.floor(diffMs / (1000 * 60 * 60 * 24)) + 1;
 
           calculatedTaskEndTime = `${String(childDue.getHours()).padStart(2, "0")}:${String(
-            childDue.getMinutes()
+            childDue.getMinutes(),
           ).padStart(2, "0")}`;
         }
 
@@ -4379,8 +4432,8 @@ export const importTasks = handleAsync(async (req, res, next) => {
       return next(
         new AppError(
           "The uploaded file is empty or in an unsupported format.",
-          400
-        )
+          400,
+        ),
       );
     }
 
@@ -4423,10 +4476,7 @@ export const importTasks = handleAsync(async (req, res, next) => {
 
     let detected = "delegation";
     if (normalized.includes("taskid")) detected = "dependent";
-    else if (
-      normalized.includes("frequency") &&
-      normalized.includes("enddate")
-    )
+    else if (normalized.includes("frequency") && normalized.includes("enddate"))
       detected = "recurring";
 
     const missing = required[detected].filter((h) => !normalized.includes(h));
@@ -4435,15 +4485,15 @@ export const importTasks = handleAsync(async (req, res, next) => {
         missing.some(
           (m) =>
             h.toLowerCase().includes(m.replace(/([a-z])([A-Z])/g, "$1 $2")) ||
-            m.includes(h.toLowerCase().replace(/[^a-z0-9]/g, ""))
-        )
+            m.includes(h.toLowerCase().replace(/[^a-z0-9]/g, "")),
+        ),
       );
       fs.unlinkSync(filePath);
       return next(
         new AppError(
           `Missing required column(s) for ${detected} import: ${missing.join(", ")}. Please use exact header names.${suspects.length ? " Suspect headers: " + suspects.join(", ") : ""}`,
-          400
-        )
+          400,
+        ),
       );
     }
 
@@ -4492,7 +4542,7 @@ export const importTasks = handleAsync(async (req, res, next) => {
 
         if (!title || !description || !assignToEmail || !departmentName) {
           throw new Error(
-            "Missing required fields: Task Title, Task Description, Assign To(Email), Assign To UserDepartment."
+            "Missing required fields: Task Title, Task Description, Assign To(Email), Assign To UserDepartment.",
           );
         }
 
@@ -4519,7 +4569,7 @@ export const importTasks = handleAsync(async (req, res, next) => {
           assignToNames.length !== assignToEmails.length
         ) {
           throw new Error(
-            "Assign To(Name) count must match Assign To(Email) count."
+            "Assign To(Name) count must match Assign To(Email) count.",
           );
         }
 
@@ -4543,11 +4593,11 @@ export const importTasks = handleAsync(async (req, res, next) => {
             const belongs =
               Array.isArray(user.department) &&
               user.department.some(
-                (id) => id.toString() === department._id.toString()
+                (id) => id.toString() === department._id.toString(),
               );
             if (!belongs)
               throw new Error(
-                `User "${assignToEmails[0]}" does not belong to "${deptName}".`
+                `User "${assignToEmails[0]}" does not belong to "${deptName}".`,
               );
 
             usersForThisRow.push({
@@ -4559,7 +4609,7 @@ export const importTasks = handleAsync(async (req, res, next) => {
         } else {
           if (assignToEmails.length !== departmentNames.length) {
             throw new Error(
-              "When using multiple users, department count must match user count."
+              "When using multiple users, department count must match user count.",
             );
           }
           for (let i = 0; i < assignToEmails.length; i++) {
@@ -4580,11 +4630,11 @@ export const importTasks = handleAsync(async (req, res, next) => {
             const belongs =
               Array.isArray(user.department) &&
               user.department.some(
-                (id) => id.toString() === department._id.toString()
+                (id) => id.toString() === department._id.toString(),
               );
             if (!belongs)
               throw new Error(
-                `User "${assignToEmails[i]}" does not belong to "${deptName}".`
+                `User "${assignToEmails[i]}" does not belong to "${deptName}".`,
               );
 
             usersForThisRow.push({
@@ -4616,18 +4666,18 @@ export const importTasks = handleAsync(async (req, res, next) => {
         if (!isDependent && !isRecurrent) {
           if (!taskEndDays || isNaN(taskEndDays)) {
             throw new Error(
-              "Task End Days must be a valid number for delegation tasks."
+              "Task End Days must be a valid number for delegation tasks.",
             );
           }
         }
         if (!isDependent && !parsedStartDate) {
           throw new Error(
-            "Start Date is required for delegation and recurring tasks."
+            "Start Date is required for delegation and recurring tasks.",
           );
         }
         if (isDependent && trimmedStartDateStr && !parsedStartDate) {
           throw new Error(
-            "Invalid Start Date format. Use DD-MM-YYYY or YYYY-MM-DD."
+            "Invalid Start Date format. Use DD-MM-YYYY or YYYY-MM-DD.",
           );
         }
 
@@ -4635,7 +4685,7 @@ export const importTasks = handleAsync(async (req, res, next) => {
         if (isDependent) {
           if (!trimmedFrequency)
             throw new Error(
-              'Frequency is required for dependent tasks. Use "T+X in days" or "T+X in hours".'
+              'Frequency is required for dependent tasks. Use "T+X in days" or "T+X in hours".',
             );
           const f = trimmedFrequency.toLowerCase();
           if (/t\+x\s*.*days|t\+xdays/i.test(f))
@@ -4644,7 +4694,7 @@ export const importTasks = handleAsync(async (req, res, next) => {
             depFreqNormalized = "T-X in hours";
           else
             throw new Error(
-              `Invalid Frequency "${trimmedFrequency}". Allowed: "T+X in days" or "T+X in hours".`
+              `Invalid Frequency "${trimmedFrequency}". Allowed: "T+X in days" or "T+X in hours".`,
             );
         }
 
@@ -4653,11 +4703,11 @@ export const importTasks = handleAsync(async (req, res, next) => {
           const attachmentPath = path.join(
             process.cwd(),
             "uploads",
-            String(attachmentFile).trim()
+            String(attachmentFile).trim(),
           );
           if (!fs.existsSync(attachmentPath)) {
             throw new Error(
-              `Attachment file "${attachmentFile}" not found in uploads directory.`
+              `Attachment file "${attachmentFile}" not found in uploads directory.`,
             );
           }
           finalAttachmentPath = String(attachmentFile).trim();
@@ -4676,9 +4726,7 @@ export const importTasks = handleAsync(async (req, res, next) => {
           const workShift = user.assignShift;
 
           if (!workShift) {
-            throw new Error(
-              `No workshift assigned to user ${user.email}.`
-            );
+            throw new Error(`No workshift assigned to user ${user.email}.`);
           }
 
           let finalStartDate = parsedStartDate;
@@ -4694,7 +4742,7 @@ export const importTasks = handleAsync(async (req, res, next) => {
             });
             if (!parentTask)
               throw new Error(
-                `Parent task ID "${trimmedParentTaskId}" not found.`
+                `Parent task ID "${trimmedParentTaskId}" not found.`,
               );
 
             const startTimeSettingNormalized =
@@ -4703,31 +4751,45 @@ export const importTasks = handleAsync(async (req, res, next) => {
                 ? "planned-to-planned"
                 : "actual-to-planned";
 
-            isActualToPlanned = startTimeSettingNormalized === "actual-to-planned";
+            isActualToPlanned =
+              startTimeSettingNormalized === "actual-to-planned";
 
             if (isActualToPlanned) {
               finalStartDate = null;
               finalDueDate = null;
             } else {
               // Planned-to-planned: Calculate dates using FMS pipeline
-              const assignedParentUser = await User.findById(parentTask.assignedTo).populate("assignShift");
+              const assignedParentUser = await User.findById(
+                parentTask.assignedTo,
+              ).populate("assignShift");
               const parentWorkShift = assignedParentUser?.assignShift;
-              const isSameShift = String(workShift?._id) === String(parentWorkShift?._id);
+              const isSameShift =
+                String(workShift?._id) === String(parentWorkShift?._id);
 
-              const parentStart = parentTask.startDate || parentTask.plannedStartDate;
+              const parentStart =
+                parentTask.startDate || parentTask.plannedStartDate;
               const parentDue = parentTask.dueDate || parentTask.plannedDueDate;
 
               let taskStartDate = parentDue
                 ? new Date(parentDue)
                 : parentStart
-                ? new Date(parentStart)
-                : new Date();
+                  ? new Date(parentStart)
+                  : new Date();
 
-              const isWorking = await isWorkingDay(taskStartDate, workShift, departmentId);
+              const isWorking = await isWorkingDay(
+                taskStartDate,
+                workShift,
+                departmentId,
+              );
               const isHoli = await isHoliday(taskStartDate, departmentId);
               const shiftEnd = snapToShiftTime(taskStartDate, workShift, false);
 
-              if (!isWorking || isHoli || taskStartDate >= shiftEnd || !isSameShift) {
+              if (
+                !isWorking ||
+                isHoli ||
+                taskStartDate >= shiftEnd ||
+                !isSameShift
+              ) {
                 let nextDay = new Date(taskStartDate);
                 if (taskStartDate >= shiftEnd) {
                   nextDay.setDate(nextDay.getDate() + 1);
@@ -4737,10 +4799,14 @@ export const importTasks = handleAsync(async (req, res, next) => {
                   nextDay,
                   workShift._id,
                   {},
-                  departmentId
+                  departmentId,
                 );
 
-                taskStartDate = snapToShiftTime(nextWorkingShift, workShift, true);
+                taskStartDate = snapToShiftTime(
+                  nextWorkingShift,
+                  workShift,
+                  true,
+                );
               }
 
               const rawX = Math.abs(Number(trimmedXValue) || 0);
@@ -4752,7 +4818,7 @@ export const importTasks = handleAsync(async (req, res, next) => {
                 taskStartDate,
                 freqParsed,
                 workShift._id,
-                departmentId
+                departmentId,
               );
             }
 
@@ -4774,7 +4840,9 @@ export const importTasks = handleAsync(async (req, res, next) => {
             }
           } else {
             // Non-dependent / Standard Task Date calculations
-            let taskStartDate = parsedStartDate ? new Date(parsedStartDate) : new Date();
+            let taskStartDate = parsedStartDate
+              ? new Date(parsedStartDate)
+              : new Date();
 
             if (
               taskStartDate.getHours() === 0 &&
@@ -4783,7 +4851,11 @@ export const importTasks = handleAsync(async (req, res, next) => {
               taskStartDate = snapToShiftTime(taskStartDate, workShift, true);
             }
 
-            const isWorking = await isWorkingDay(taskStartDate, workShift, departmentId);
+            const isWorking = await isWorkingDay(
+              taskStartDate,
+              workShift,
+              departmentId,
+            );
             const isHoli = await isHoliday(taskStartDate, departmentId);
             const shiftEnd = snapToShiftTime(taskStartDate, workShift, false);
 
@@ -4797,10 +4869,14 @@ export const importTasks = handleAsync(async (req, res, next) => {
                 nextDay,
                 workShift._id,
                 {},
-                departmentId
+                departmentId,
               );
 
-              taskStartDate = snapToShiftTime(nextWorkingShift, workShift, true);
+              taskStartDate = snapToShiftTime(
+                nextWorkingShift,
+                workShift,
+                true,
+              );
             }
 
             finalStartDate = taskStartDate;
@@ -4811,7 +4887,7 @@ export const importTasks = handleAsync(async (req, res, next) => {
                 finalStartDate,
                 endDaysParsed,
                 workShift._id,
-                departmentId
+                departmentId,
               );
             } else if (parsedDueDate) {
               finalDueDate = new Date(parsedDueDate);
@@ -4854,7 +4930,8 @@ export const importTasks = handleAsync(async (req, res, next) => {
             dueDay.setHours(0, 0, 0, 0);
 
             const diffMs = dueDay.getTime() - startDay.getTime();
-            calculatedTaskEndDays = Math.floor(diffMs / (1000 * 60 * 60 * 24)) + 1;
+            calculatedTaskEndDays =
+              Math.floor(diffMs / (1000 * 60 * 60 * 24)) + 1;
           }
 
           const taskData = {
@@ -4914,7 +4991,7 @@ export const importTasks = handleAsync(async (req, res, next) => {
           const counter = await Counter.findByIdAndUpdate(
             { _id: `taskId-${period}` },
             { $inc: { seq: 1 } },
-            { new: true, upsert: true }
+            { new: true, upsert: true },
           );
           taskInstance.TaskId = `${period}${counter.seq.toString().padStart(4, "0")}`;
 
@@ -5126,7 +5203,8 @@ export const updateTask = handleAsync(async (req, res, next) => {
         departmentOfAssignToUser.toString());
 
   if (assignedTo) task.assignedTo = assignedTo;
-  if (departmentOfAssignToUser) task.departmentOfAssignToUser = departmentOfAssignToUser;
+  if (departmentOfAssignToUser)
+    task.departmentOfAssignToUser = departmentOfAssignToUser;
 
   // File Handling
   let existingFiles = [];
@@ -5177,15 +5255,25 @@ export const updateTask = handleAsync(async (req, res, next) => {
   let workShift = null;
 
   if (currentAssignedTo) {
-    assignedUser = await User.findById(currentAssignedTo).populate("assignShift");
-    if (!assignedUser) return next(new AppError(`User with ID ${currentAssignedTo} not found`, 404));
+    assignedUser =
+      await User.findById(currentAssignedTo).populate("assignShift");
+    if (!assignedUser)
+      return next(
+        new AppError(`User with ID ${currentAssignedTo} not found`, 404),
+      );
     workShift = assignedUser.assignShift;
-    if (!workShift) return next(new AppError(`No workshift assigned to user ${assignedUser.name}`, 400));
+    if (!workShift)
+      return next(
+        new AppError(`No workshift assigned to user ${assignedUser.name}`, 400),
+      );
   }
 
   const hasStartDate = startDate !== undefined && cleanField(startDate);
   const hasDueDate = dueDate !== undefined && cleanField(dueDate);
-  const hasTaskEndDays = taskEndDays !== undefined && taskEndDays !== null && String(taskEndDays).trim() !== "";
+  const hasTaskEndDays =
+    taskEndDays !== undefined &&
+    taskEndDays !== null &&
+    String(taskEndDays).trim() !== "";
   const hasTaskEndTime = taskEndTime !== undefined && cleanField(taskEndTime);
 
   // 🟢 DETECT IF START DATE ACTUALLY CHANGED FROM EXISTING DB VALUE
@@ -5193,7 +5281,7 @@ export const updateTask = handleAsync(async (req, res, next) => {
   if (hasStartDate && task.startDate) {
     const incomingStart = parseDateIST(startDate);
     const existingStart = new Date(task.startDate);
-    
+
     // Day/Month/Year Comparison
     if (
       incomingStart.getFullYear() !== existingStart.getFullYear() ||
@@ -5231,11 +5319,18 @@ export const updateTask = handleAsync(async (req, res, next) => {
     if (!parsedStartDate) return next(new AppError("Invalid start date", 400));
 
     // Snap 12:00 AM to Shift Start
-    if (parsedStartDate.getHours() === 0 && parsedStartDate.getMinutes() === 0) {
+    if (
+      parsedStartDate.getHours() === 0 &&
+      parsedStartDate.getMinutes() === 0
+    ) {
       parsedStartDate = snapToShiftTime(parsedStartDate, workShift, true);
     }
 
-    const isWorking = await isWorkingDay(parsedStartDate, workShift, targetDeptId);
+    const isWorking = await isWorkingDay(
+      parsedStartDate,
+      workShift,
+      targetDeptId,
+    );
     const isHoli = await isHoliday(parsedStartDate, targetDeptId);
     const shiftEnd = snapToShiftTime(parsedStartDate, workShift, false);
 
@@ -5247,7 +5342,7 @@ export const updateTask = handleAsync(async (req, res, next) => {
         nextDay,
         workShift._id,
         {},
-        targetDeptId
+        targetDeptId,
       );
       parsedStartDate = snapToShiftTime(nextWorkingShift, workShift, true);
     }
@@ -5258,7 +5353,7 @@ export const updateTask = handleAsync(async (req, res, next) => {
       new Date(),
       workShift._id,
       {},
-      targetDeptId
+      targetDeptId,
     );
     task.startDate = snapToShiftTime(nextValidStart, workShift, true);
     isStartDateRealChange = true;
@@ -5270,7 +5365,9 @@ export const updateTask = handleAsync(async (req, res, next) => {
   if (hasTaskEndDays) {
     const parsedEndDays = Number(taskEndDays);
     if (!Number.isFinite(parsedEndDays) || parsedEndDays < 0) {
-      return next(new AppError("taskEndDays must be a valid positive number", 400));
+      return next(
+        new AppError("taskEndDays must be a valid positive number", 400),
+      );
     }
     task.taskEndDays = parsedEndDays;
   }
@@ -5284,24 +5381,31 @@ export const updateTask = handleAsync(async (req, res, next) => {
   // =========================================================================
   if (task.taskType === "DelegationTask") {
     // CONDITION 1: Real Start Date change OR taskEndDays modified
-    if ((isStartDateRealChange || (hasTaskEndDays && oldData.taskEndDays !== Number(taskEndDays))) && task.startDate && task.taskEndDays > 0) {
+    if (
+      (isStartDateRealChange ||
+        (hasTaskEndDays && oldData.taskEndDays !== Number(taskEndDays))) &&
+      task.startDate &&
+      task.taskEndDays > 0
+    ) {
       const endDaysParsed = { isDay: true, value: Number(task.taskEndDays) };
-      
+
       let calculatedDue = await calculateCalendarDurationWithShiftSnap(
         task.startDate,
         endDaysParsed,
         workShift._id,
-        targetDeptId
+        targetDeptId,
       );
 
       if (task.taskEndTime) {
-        const [hours, minutes] = String(task.taskEndTime).split(":").map(Number);
+        const [hours, minutes] = String(task.taskEndTime)
+          .split(":")
+          .map(Number);
         if (Number.isFinite(hours) && Number.isFinite(minutes)) {
           calculatedDue.setHours(hours, minutes, 0, 0);
         }
       }
       task.dueDate = calculatedDue;
-    } 
+    }
     // CONDITION 2: Real Due Date change from Front-end
     else if (isDueDateRealChange) {
       let parsedDueDate = parseDateIST(dueDate);
@@ -5312,13 +5416,15 @@ export const updateTask = handleAsync(async (req, res, next) => {
       }
 
       if (task.taskEndTime) {
-        const [hours, minutes] = String(task.taskEndTime).split(":").map(Number);
+        const [hours, minutes] = String(task.taskEndTime)
+          .split(":")
+          .map(Number);
         if (Number.isFinite(hours) && Number.isFinite(minutes)) {
           parsedDueDate.setHours(hours, minutes, 0, 0);
         }
       }
       task.dueDate = parsedDueDate;
-    } 
+    }
     // CONDITION 3: ONLY taskEndTime or same form payload submission (DATE REMAINS STRICTLY SAME)
     else if (task.dueDate && task.taskEndTime) {
       const [hours, minutes] = String(task.taskEndTime).split(":").map(Number);
@@ -5331,7 +5437,11 @@ export const updateTask = handleAsync(async (req, res, next) => {
   }
 
   // Sync taskEndDays ONLY when calendar dates undergo real changes
-  if ((isStartDateRealChange || isDueDateRealChange) && task.startDate && task.dueDate) {
+  if (
+    (isStartDateRealChange || isDueDateRealChange) &&
+    task.startDate &&
+    task.dueDate
+  ) {
     const startDay = new Date(task.startDate);
     const dueDay = new Date(task.dueDate);
     startDay.setHours(0, 0, 0, 0);
@@ -5394,7 +5504,8 @@ export const updateTask = handleAsync(async (req, res, next) => {
   });
 
   // Unlock Dependent Tasks
-  const justCompleted = status === "Completed" && oldData.status !== "Completed";
+  const justCompleted =
+    status === "Completed" && oldData.status !== "Completed";
 
   if (justCompleted) {
     const dependentTasks = await Task.find({
@@ -5418,7 +5529,11 @@ export const updateTask = handleAsync(async (req, res, next) => {
 
         let childStart = new Date(task.completedAt);
 
-        const isTodayWorking = await isWorkingDay(childStart, childWorkShift, targetChildDeptId);
+        const isTodayWorking = await isWorkingDay(
+          childStart,
+          childWorkShift,
+          targetChildDeptId,
+        );
         const isTodayHoli = await isHoliday(childStart, targetChildDeptId);
         const shiftEnd = snapToShiftTime(childStart, childWorkShift, false);
 
@@ -5430,14 +5545,14 @@ export const updateTask = handleAsync(async (req, res, next) => {
             nextDay,
             childWorkShift._id,
             {},
-            targetChildDeptId
+            targetChildDeptId,
           );
           childStart = snapToShiftTime(nextWorkingShift, childWorkShift, true);
         }
 
         const freqParsed = parseFrequencyToHours(
           depTask.dependencyConfig?.isDependentFrequency,
-          depTask.dependencyConfig?.xValue
+          depTask.dependencyConfig?.xValue,
         );
         freqParsed.value = Math.abs(freqParsed.value);
 
@@ -5445,7 +5560,7 @@ export const updateTask = handleAsync(async (req, res, next) => {
           childStart,
           freqParsed,
           childWorkShift._id,
-          targetChildDeptId
+          targetChildDeptId,
         );
 
         let calculatedTaskEndDays = null;
@@ -5464,7 +5579,8 @@ export const updateTask = handleAsync(async (req, res, next) => {
           dueDay.setHours(0, 0, 0, 0);
 
           const diffMs = dueDay.getTime() - startDay.getTime();
-          calculatedTaskEndDays = Math.floor(diffMs / (1000 * 60 * 60 * 24)) + 1;
+          calculatedTaskEndDays =
+            Math.floor(diffMs / (1000 * 60 * 60 * 24)) + 1;
           calculatedTaskEndTime = `${String(childDue.getHours()).padStart(2, "0")}:${String(childDue.getMinutes()).padStart(2, "0")}`;
         }
 

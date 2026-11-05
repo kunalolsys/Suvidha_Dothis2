@@ -38,7 +38,11 @@ import {
   XCircle,
   MessageCircle,
   MessageSquarePlus,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react";
+
 import {
   Dialog,
   DialogContent,
@@ -833,6 +837,51 @@ const TodayTasksTable = ({
   canUpdate,
 }) => {
   const combinedTasks = [...(tasks || []), ...(upcomingRecurringTasks || [])];
+
+  // 1. Sorting State
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: "asc" });
+
+  // 2. Click Handler (Toggle Ascending / Descending)
+  const handleSort = (columnKey) => {
+    let direction = "asc";
+    if (sortConfig.key === columnKey && sortConfig.direction === "asc") {
+      direction = "desc";
+    }
+    setSortConfig({ key: columnKey, direction });
+  };
+
+  // Helper for Sort Icons
+  const getSortIcon = (columnKey) => {
+    if (sortConfig.key !== columnKey) {
+      return (
+        <ArrowUpDown className="h-3.5 w-3.5 text-gray-400 opacity-60 ml-1" />
+      );
+    }
+    return sortConfig.direction === "asc" ? (
+      <ArrowUp className="h-3.5 w-3.5 text-blue-600 ml-1" />
+    ) : (
+      <ArrowDown className="h-3.5 w-3.5 text-blue-600 ml-1" />
+    );
+  };
+
+  // 3. Frontend Sorting
+  const sortedTasks = useMemo(() => {
+    if (!sortConfig.key) return combinedTasks;
+
+    return [...combinedTasks].sort((a, b) => {
+      const valA = a[sortConfig.key]
+        ? new Date(a[sortConfig.key]).getTime()
+        : 0;
+      const valB = b[sortConfig.key]
+        ? new Date(b[sortConfig.key]).getTime()
+        : 0;
+
+      if (valA < valB) return sortConfig.direction === "asc" ? -1 : 1;
+      if (valA > valB) return sortConfig.direction === "asc" ? 1 : -1;
+      return 0;
+    });
+  }, [combinedTasks, sortConfig]);
+
   return (
     <div className="overflow-x-auto border rounded-lg bg-white">
       <Table>
@@ -840,23 +889,45 @@ const TodayTasksTable = ({
           <TableRow>
             <TableHead>Sr. No.</TableHead>
             <TableHead>Task Id</TableHead>
+            <TableHead>Status</TableHead>
+            {canUpdate && <TableHead>Actions</TableHead>}
             <TableHead>Task Title</TableHead>
             <TableHead>Assigned By</TableHead>
             <TableHead>Assigned To</TableHead>
             <TableHead>Description</TableHead>
             <TableHead>Type</TableHead>
             <TableHead>Attachment</TableHead>
-            <TableHead>Start Date & Time</TableHead>{" "}
-            <TableHead>Due Date & Time</TableHead>
+
+            {/* Clickable Start Date */}
+            <TableHead
+              className="cursor-pointer select-none hover:bg-gray-100 transition-colors"
+              onClick={() => handleSort("startDate")}
+            >
+              <div className="flex items-center">
+                <span>Start Date & Time</span>
+                {getSortIcon("startDate")}
+              </div>
+            </TableHead>
+
+            {/* Clickable Due Date */}
+            <TableHead
+              className="cursor-pointer select-none hover:bg-gray-100 transition-colors"
+              onClick={() => handleSort("dueDate")}
+            >
+              <div className="flex items-center">
+                <span>Due Date & Time</span>
+                {getSortIcon("dueDate")}
+              </div>
+            </TableHead>
+
             <TableHead>Frequency</TableHead>
             <TableHead>Time Left</TableHead>
-            <TableHead>Status</TableHead>
-            {canUpdate && <TableHead>Actions</TableHead>}
           </TableRow>
         </TableHeader>
+
         <TableBody>
-          {combinedTasks.length > 0 ? (
-            combinedTasks.map((task, index) => {
+          {sortedTasks.length > 0 ? (
+            sortedTasks.map((task, index) => {
               const assignedByUser = allUsers.find(
                 (u) => String(u._id) === String(task.assignedBy?._id),
               );
@@ -877,12 +948,41 @@ const TodayTasksTable = ({
                       {(currentPage - 1) * itemsPerPage + index + 1}
                     </TableCell>
                     <TableCell>{task.TaskId || "-"}</TableCell>
+
+                    <TableCell>{getStatusBadge(task.status)}</TableCell>
+                    {canUpdate && (
+                      <TableCell>
+                        <div className="flex items-center">
+                          <TaskActions
+                            task={task}
+                            onChecklist={onChecklist}
+                            onToggleComplete={onToggleComplete}
+                            handleCompleteClick={handleCompleteClick}
+                            setSelectedQueryTask={setSelectedQueryTask}
+                            setQueryDrawerOpen={setQueryDrawerOpen}
+                            setRaiseQueryModalOpen={setRaiseQueryModalOpen}
+                            unreadCount={unreadMap[task.conversationId] || 0}
+                            setUnreadMap={setUnreadMap}
+                            assignedByUser={assignedByUser}
+                            assignedToUser={assignedToUser}
+                            setSubmissionModalOpen={setSubmissionModalOpen}
+                            setSelectedSubmissionTask={
+                              setSelectedSubmissionTask
+                            }
+                          />
+                        </div>
+                      </TableCell>
+                    )}
                     <TableCell className="font-medium">
                       <div className="flex flex-col gap-1">
                         {/* TITLE + BADGE */}
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span>{task.title}</span>
-
+                          <span
+                            className="truncate max-w-[200px] inline-block"
+                            title={task.title}
+                          >
+                            {task.title}
+                          </span>
                           {task.isReopen && (
                             <span
                               className="
@@ -995,11 +1095,7 @@ const TodayTasksTable = ({
           ? "bg-red-100 text-red-700"
           : assignedByUser.role?.name === "owner"
             ? "bg-purple-100 text-purple-700"
-            // : assignedByUser.role?.name === "sr._manager"
-            //   ? "bg-blue-100 text-blue-700"
-            //   : assignedByUser.role?.name === "manager"
-            //     ? "bg-green-100 text-green-700"
-                : "bg-gray-100 text-gray-700"
+            : "bg-gray-100 text-gray-700"
       }
     `}
                           >
@@ -1022,11 +1118,7 @@ const TodayTasksTable = ({
           ? "bg-red-100 text-red-700"
           : assignedToUser.role?.name === "owner"
             ? "bg-purple-100 text-purple-700"
-            // : assignedToUser.role?.name === "sr._manager"
-            //   ? "bg-blue-100 text-blue-700"
-            //   : assignedToUser.role?.name === "manager"
-            //     ? "bg-green-100 text-green-700"
-                : "bg-gray-100 text-gray-700"
+            : "bg-gray-100 text-gray-700"
       }
     `}
                           >
@@ -1053,7 +1145,7 @@ const TodayTasksTable = ({
                             ? "bg-blue-100 text-blue-700"
                             : task.taskType === "RecurringTask"
                               ? "bg-purple-100 text-purple-700"
-                              : task.taskType == "FutureRecurringTask"
+                              : task.taskType === "FutureRecurringTask"
                                 ? "bg-purple-100 text-purple-700"
                                 : task.frequency
                                   ? "bg-purple-100 text-purple-700"
@@ -1064,7 +1156,7 @@ const TodayTasksTable = ({
                           ? "FMS"
                           : task.taskType === "RecurringTask"
                             ? "Recurring"
-                            : task.taskType == "FutureRecurringTask"
+                            : task.taskType === "FutureRecurringTask"
                               ? "Future Recurring"
                               : task.frequency
                                 ? "Recurring"
@@ -1173,30 +1265,6 @@ const TodayTasksTable = ({
                         );
                       })()}
                     </TableCell>
-                    <TableCell>{getStatusBadge(task.status)}</TableCell>
-                    {canUpdate && (
-                      <TableCell>
-                        <div className="flex items-center">
-                          <TaskActions
-                            task={task}
-                            onChecklist={onChecklist}
-                            onToggleComplete={onToggleComplete}
-                            handleCompleteClick={handleCompleteClick}
-                            setSelectedQueryTask={setSelectedQueryTask}
-                            setQueryDrawerOpen={setQueryDrawerOpen}
-                            setRaiseQueryModalOpen={setRaiseQueryModalOpen}
-                            unreadCount={unreadMap[task.conversationId] || 0}
-                            setUnreadMap={setUnreadMap}
-                            assignedByUser={assignedByUser}
-                            assignedToUser={assignedToUser}
-                            setSubmissionModalOpen={setSubmissionModalOpen}
-                            setSelectedSubmissionTask={
-                              setSelectedSubmissionTask
-                            }
-                          />
-                        </div>
-                      </TableCell>
-                    )}
                   </TableRow>
                 </React.Fragment>
               );

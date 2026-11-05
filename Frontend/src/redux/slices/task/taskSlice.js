@@ -6,26 +6,18 @@ export const fetchTasks = createAsyncThunk(
   "tasks/fetchTasks",
   async (params = {}, { rejectWithValue }) => {
     try {
-      const { userId, search, status, page, limit } = params;
-      let url = "/tasks";
-      const queryParams = [];
+      const { userId, search, status, page = 1, limit = 10, type } = params;
+      const queryParams = new URLSearchParams();
 
-      if (userId) queryParams.push(`userId=${userId}`);
-      if (search) queryParams.push(`search=${search}`);
-      if (status) queryParams.push(`status=${status}`);
-      if (page) queryParams.push(`page=${page}`);
-      if (limit) {
-        queryParams.push(`limit=${limit}`);
-      } else {
-        queryParams.push(`limit=10000`);
-      }
+      if (userId && userId !== "all") queryParams.append("userId", userId);
+      if (search) queryParams.append("search", search);
+      if (status && status !== "all") queryParams.append("status", status);
+      if (type) queryParams.append("type", type);
+      queryParams.append("page", page);
+      queryParams.append("limit", limit);
 
-      if (queryParams.length > 0) {
-        url = `${url}?${queryParams.join("&")}`;
-      }
-
-      const response = await api.get(url);
-      return response.data; // Return the whole data object including pagination info
+      const response = await api.get(`/tasks?${queryParams.toString()}`);
+      return response.data; // { success, data, totalTasks, currentPage, perPage, totalPages }
     } catch (error) {
       return rejectWithValue(error.response?.data?.message || error.message);
     }
