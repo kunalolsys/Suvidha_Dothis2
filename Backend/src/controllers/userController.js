@@ -200,6 +200,7 @@ export const exportUsers = handleAsync(async (req, res) => {
       : u.department?.name || "",
     Shift: u.assignShift?.name || "",
     "Telegram Username": u.telegramUserName || "", // 🟢 Telegram Username Field
+    "Telegram Chat ID": u.telegramChatId || "", // 🟢 Telegram Username Field
     "Telegram Notifications": u.telegramNotificationsEnabled
       ? "Enabled"
       : "Disabled", // 🟢 Telegram Notifications Status
@@ -660,11 +661,11 @@ export const importUsersCSV = handleAsync(async (req, res, next) => {
     return next(new AppError("CSV file is empty.", 400));
   }
 
-  // 🟢 CLEAN CSV KEYS (Remove UTF-8 BOM mark and trim whitespace)
+  // CLEAN CSV KEYS (Remove UTF-8 BOM mark and trim whitespace)
   const rows = rawRows.map((row) => {
     const cleanRow = {};
     Object.keys(row).forEach((key) => {
-      const cleanKey = key.replace(/^\uFEFF/, "").trim(); // Strip BOM
+      const cleanKey = key.replace(/^\uFEFF/, "").trim();
       cleanRow[cleanKey] = row[key];
     });
     return cleanRow;
@@ -679,7 +680,6 @@ export const importUsersCSV = handleAsync(async (req, res, next) => {
       User.find({ isDeleted: false }),
     ]);
 
-  // Lookup Maps (Case-insensitive & Trimmed)
   const roleMap = new Map(
     allRoles.map((r) => [r.name.trim().toLowerCase(), r]),
   );
@@ -690,7 +690,6 @@ export const importUsersCSV = handleAsync(async (req, res, next) => {
     allDepartments.map((d) => [d.name.trim().toLowerCase(), d._id]),
   );
 
-  // Existing Users Lookup Maps for Quick UPSERT Matching
   const existingUserByEmpCode = new Map(
     existingUsers
       .filter((u) => u.employeeCode)
@@ -702,7 +701,6 @@ export const importUsersCSV = handleAsync(async (req, res, next) => {
       .map((u) => [u.email.trim().toLowerCase(), u]),
   );
 
-  // Standard hierarchy lookup
   const superRole = allRoles.find((r) => r.name.toLowerCase() === "super");
   const adminRole = allRoles.find((r) => r.name.toLowerCase() === "admin");
 
@@ -719,7 +717,6 @@ export const importUsersCSV = handleAsync(async (req, res, next) => {
   const validRowsToProcess = [];
   const errorRows = [];
 
-  // Helper for Boolean parsing
   const parseBooleanValue = (val, defaultValue = true) => {
     if (val === undefined || val === null || String(val).trim() === "")
       return defaultValue;
@@ -739,6 +736,15 @@ export const importUsersCSV = handleAsync(async (req, res, next) => {
     const deptString = (row.Departme || row.Department || "").trim();
 
     // 🟢 Telegram Fields Extraction
+    const telegramChatId = (
+      row["Telegram Chat Id"] ||
+      row["Telegram Chat ID"] ||
+      row["TelegramChatId"] ||
+      row["Chat ID"] ||
+      row["ChatId"] ||
+      ""
+    ).trim();
+
     const telegramUserName = (
       row["Telegram Username"] ||
       row["Telegram User Name"] ||
@@ -767,7 +773,6 @@ export const importUsersCSV = handleAsync(async (req, res, next) => {
       continue;
     }
 
-    // Resolve Role & Shift
     const matchedRoleObj = roleMap.get(roleName);
     const shiftId = shiftMap.get(shiftName);
 
@@ -786,11 +791,9 @@ export const importUsersCSV = handleAsync(async (req, res, next) => {
       continue;
     }
 
-    // Parse Department
     const firstDeptName = deptString.split(",")[0]?.trim().toLowerCase();
     const singleDeptId = firstDeptName ? deptMap.get(firstDeptName) : undefined;
 
-    // Reporting Manager Resolution
     let resolvedReportingManager = undefined;
     if (matchedRoleObj.name === "admin") {
       resolvedReportingManager = superUser ? superUser._id : undefined;
@@ -798,12 +801,10 @@ export const importUsersCSV = handleAsync(async (req, res, next) => {
       resolvedReportingManager = adminUser ? adminUser._id : undefined;
     }
 
-    // Check if User already exists in Database (Match by Employee Code first, then Email)
     const matchedExistingUser =
       (empCode && existingUserByEmpCode.get(empCode.toLowerCase())) ||
       existingUserByEmail.get(email);
 
-    // Track CSV uniqueness
     emailsInCSV.add(email);
     if (empCode) empCodesInCSV.add(empCode.toLowerCase());
 
@@ -820,13 +821,14 @@ export const importUsersCSV = handleAsync(async (req, res, next) => {
         reportingManager: resolvedReportingManager,
         assignShift: shiftId,
         password: password || undefined,
-        telegramUserName: telegramUserName || null, // 👈 Saved in User Model
-        telegramNotificationsEnabled, // 👈 Saved in User Model
+        telegramChatId: telegramChatId || undefined, // 👈 Optional
+        telegramUserName: telegramUserName || null,
+        telegramNotificationsEnabled,
       },
     });
   }
 
-  // 4. Execute Creation / Update Logic
+  // 4. Creation / Update
   const createdUsers = [];
   const updatedUsers = [];
 
@@ -836,7 +838,6 @@ export const importUsersCSV = handleAsync(async (req, res, next) => {
   for (const item of validRowsToProcess) {
     try {
       if (item.existingUser) {
-        // 🟢 UPDATE EXISTING USER LOGIC
         const targetUser = item.existingUser;
         let isUpdated = false;
 
@@ -849,8 +850,9 @@ export const importUsersCSV = handleAsync(async (req, res, next) => {
           "role",
           "reportingManager",
           "assignShift",
-          "telegramUserName", // 👈 Check for Telegram Username Updates
-          "telegramNotificationsEnabled", // 👈 Check for Telegram Notification Toggle
+          "telegramChatId", // 👈 Added
+          "telegramUserName",
+          "telegramNotificationsEnabled",
         ];
 
         fieldsToUpdate.forEach((field) => {
@@ -863,7 +865,6 @@ export const importUsersCSV = handleAsync(async (req, res, next) => {
           }
         });
 
-        // Update password if provided explicitly
         if (item.payload.password) {
           targetUser.password = item.payload.password;
           isUpdated = true;
@@ -883,7 +884,6 @@ export const importUsersCSV = handleAsync(async (req, res, next) => {
           }).catch((e) => console.error("Log error:", e.message));
         }
       } else {
-        // 🟢 CREATE NEW USER LOGIC
         if (!item.payload.password) {
           errorRows.push({
             ...item.originalRow,
@@ -931,5 +931,157 @@ export const importUsersCSV = handleAsync(async (req, res, next) => {
       errorRows,
     },
     message: `Import completed: ${createdUsers.length} user(s) created, ${updatedUsers.length} user(s) updated.`,
+  });
+});
+
+export const updateUsersCSV = handleAsync(async (req, res, next) => {
+  if (!req.file) {
+    return next(new AppError("Kripya ek CSV file upload karein.", 400));
+  }
+
+  const filePath = req.file.path;
+  const rawRows = [];
+
+  try {
+    await new Promise((resolve, reject) => {
+      fs.createReadStream(filePath)
+        .pipe(csvParser())
+        .on("data", (data) => rawRows.push(data))
+        .on("end", resolve)
+        .on("error", reject);
+    });
+  } catch (parseErr) {
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    return next(new AppError("CSV file format parse karne mein error aaya.", 400));
+  }
+
+  if (fs.existsSync(filePath)) {
+    fs.unlinkSync(filePath);
+  }
+
+  if (rawRows.length === 0) {
+    return next(new AppError("CSV file khali hai.", 400));
+  }
+
+  // BOM strip aur column keys trim
+  const rows = rawRows.map((row) => {
+    const cleanRow = {};
+    Object.keys(row).forEach((key) => {
+      const cleanKey = key.replace(/^\uFEFF/, "").trim();
+      cleanRow[cleanKey] = row[key];
+    });
+    return cleanRow;
+  });
+
+  // Database se active users fetch karein
+  const existingUsers = await User.find({ isDeleted: false });
+
+  // Sirf Email se lookup Map banayein
+  const userByEmail = new Map(
+    existingUsers
+      .filter((u) => u.email)
+      .map((u) => [u.email.trim().toLowerCase(), u]),
+  );
+
+  const updatedUsers = [];
+  const errorRows = [];
+  const skippedRows = [];
+
+  for (const row of rows) {
+    // 1. Email extract karein
+    const email = (row.email || row.Email || "").trim().toLowerCase();
+
+    if (!email) {
+      errorRows.push({
+        ...row,
+        "Error Reason": "Row mein email nahi mila.",
+      });
+      continue;
+    }
+
+    // 2. Sirf Email se user dhoondein
+    const targetUser = userByEmail.get(email);
+
+    if (!targetUser) {
+      errorRows.push({
+        ...row,
+        "Error Reason": `Email '${email}' ke liye database mein koi user nahi mila.`,
+      });
+      continue;
+    }
+
+    // 3. chat_id extract karein (aapki CSV ka exact column 'chat_id' hai)
+    const rawChatId =
+      row.chat_id ||
+      row.chatId ||
+      row["Chat ID"] ||
+      row["Telegram Chat Id"] ||
+      row["Telegram Chat ID"];
+
+    if (rawChatId === undefined || rawChatId === null || String(rawChatId).trim() === "") {
+      skippedRows.push({
+        ...row,
+        "Skip Reason": "Is row mein chat_id khali hai.",
+      });
+      continue;
+    }
+
+    // Floating-point ya scientific format se clean integer string banayein
+    let cleanChatId = String(rawChatId).trim();
+    if (cleanChatId.includes("e") || cleanChatId.includes("E") || cleanChatId.includes(".")) {
+      const parsedNum = Number(cleanChatId);
+      if (!isNaN(parsedNum)) {
+        cleanChatId = BigInt(Math.trunc(parsedNum)).toString();
+      }
+    }
+
+    // Agar chat_id pehle se wahi hai toh update skip karein
+    if (String(targetUser.telegramChatId || "").trim() === cleanChatId) {
+      skippedRows.push({
+        ...row,
+        "Skip Reason": "Telegram Chat ID pehle se update hai.",
+      });
+      continue;
+    }
+
+    // 4. Sirf telegramChatId update karein
+    targetUser.telegramChatId = cleanChatId;
+
+    try {
+      await targetUser.save();
+      updatedUsers.push({
+        _id: targetUser._id,
+        name: targetUser.name,
+        email: targetUser.email,
+        telegramChatId: targetUser.telegramChatId,
+      });
+
+      createLog({
+        action: "UPDATE",
+        module: "USER",
+        documentId: targetUser._id,
+        performedBy: req.cookies?.userId || req.user?._id || null,
+        newData: { telegramChatId: cleanChatId },
+        message: "Telegram Chat ID updated via CSV",
+      }).catch((e) => console.error("Log error:", e.message));
+    } catch (saveErr) {
+      errorRows.push({
+        ...row,
+        "Error Reason": saveErr.message || "Record update karne mein error aaya.",
+      });
+    }
+  }
+
+  res.status(200).json({
+    status: "success",
+    data: {
+      totalRows: rows.length,
+      updatedCount: updatedUsers.length,
+      errorCount: errorRows.length,
+      skippedCount: skippedRows.length,
+      errorRows,
+      skippedRows,
+    },
+    message: `Update complete: ${updatedUsers.length} user(s) update hue, ${skippedRows.length} skip hue, ${errorRows.length} fail hue.`,
   });
 });

@@ -11,6 +11,7 @@ import {
   dashboardUserCount,
   getAllFilterUserForDrops,
   importUsersCSV,
+  updateUsersCSV,
 } from "../controllers/userController.js";
 import { authenticateJWT } from "../middleware/authMiddleware.js";
 import upload from "../services/Upload.js";
@@ -19,6 +20,7 @@ const router = express.Router();
 
 router.post("/", authenticateJWT, createUser);
 router.post("/import", upload.single("file"), importUsersCSV);
+router.post("/import-update", upload.single("file"), updateUsersCSV);
 router.post("/list", authenticateJWT, getAllUsers);
 router.get("/list-drop", authenticateJWT, getAllUsersForDrop);
 router.get("/user-count", authenticateJWT, dashboardUserCount);
