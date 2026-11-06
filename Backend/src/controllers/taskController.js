@@ -2390,11 +2390,11 @@ export const exportMYTasks = handleAsync(async (req, res) => {
         createdAt: task.createdAt,
       }))
     : [];
- let allTasks = [...tasks, ...mappedFmsTasks];
-if (taskCategory === "upcoming") {
-  allTasks.push(...finalVirtualRecurring);
-}
-const finalData = [...allTasks];
+  let allTasks = [...tasks, ...mappedFmsTasks];
+  if (taskCategory === "upcoming") {
+    allTasks.push(...finalVirtualRecurring);
+  }
+  const finalData = [...allTasks];
 
   res.json({
     success: true,
@@ -3672,11 +3672,7 @@ export const getAllTasks = handleAsync(async (req, res, next) => {
   // --- TAB KE HISAB SE ALAG PAGINATION AUR FILTER (FIX) ---
   if (type) {
     if (type === "DelegationTask") {
-      filterQuery.$or = [
-        { taskType: "DelegationTask" },
-        { taskType: { $exists: false } },
-        { recurrenceFrequency: { $exists: false } },
-      ];
+      filterQuery.taskType = "DelegationTask";
     } else if (type === "RecurringTask") {
       filterQuery.taskType = "RecurringTask";
     }
