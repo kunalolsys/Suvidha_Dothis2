@@ -77,6 +77,8 @@ export const getFilterTasks = createAsyncThunk(
         search,
         filters = {},
         creatorOrAssignorId,
+        sortBy,
+        sortOrder,
       } = params;
 
       const payload = {
@@ -85,6 +87,8 @@ export const getFilterTasks = createAsyncThunk(
         limit,
         creatorOrAssignorId,
 
+        ...(sortBy && { sortBy }),
+        ...(sortOrder && { sortOrder }),
         ...(search && { search }),
         ...(dateRange && {
           startDate: dateRange?.[0]
@@ -96,18 +100,11 @@ export const getFilterTasks = createAsyncThunk(
         }),
 
         filters: {
-          // ✅ STAT (overdue, dueToday, completed, total)
           ...(filters.stat && { stat: filters.stat }),
-
-          // ✅ TAB CATEGORY (today_backlog, upcoming, completed)
           ...(filters.taskCategory && {
             taskCategory: filters.taskCategory,
           }),
-
-          // ✅ STATUS (Pending, Completed, etc.)
           ...(filters.status && { status: filters.status }),
-
-          // ✅ TASK TYPE (DelegationTask, RecurringTask)
           ...(filters.taskType && { taskType: filters.taskType }),
         },
       };
@@ -344,6 +341,8 @@ export const getRoleBasedTasks = createAsyncThunk(
         search,
         selectedTemplate,
         taskTypeFilter,
+        sortBy,
+        sortOrder,
       } = params;
 
       const payload = {
@@ -357,6 +356,8 @@ export const getRoleBasedTasks = createAsyncThunk(
         selectedSrManager,
         selectedTemplate,
         taskTypeFilter,
+        ...(sortBy && { sortBy }),
+        ...(sortOrder && { sortOrder }),
         ...(search && { search }),
 
         filters: {

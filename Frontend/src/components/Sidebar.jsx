@@ -684,7 +684,7 @@ const Sidebar = ({ children }) => {
               </Link>
             )}
           {/* 3.1 Regular Employee: Extendable Tasks (Sabhi ko dikhega jinko delegation_task permission hai) */}
-          {hasPermission("delegation_task", "read") &&
+          {/* {hasPermission("delegation_task", "read") &&
             isModuleEnabled("DO_THIS2") && (
               <Link
                 to="/extendable-tasks"
@@ -720,10 +720,10 @@ const Sidebar = ({ children }) => {
                   </span>
                 )}
               </Link>
-            )}
+            )} */}
 
           {/* 3.2 Admin & Manager: Task Extensions Dropdown (Using existing normalizedRole & isSuper) */}
-          {(isSuper ||
+          {/* {(isSuper ||
             normalizedRole.includes("admin") ||
             normalizedRole.includes("manager") ||
             normalizedRole.includes("owner")) &&
@@ -776,11 +776,10 @@ const Sidebar = ({ children }) => {
                     )}
                   </button>
 
-                  {/* Submenu Links */}
+
                   {(openDropdowns.taskExtension || isTaskExtensionActive) &&
                     !isCollapsed && (
                       <div className="ml-3 mt-1.5 space-y-1 pl-4 border-l-2 border-gray-200/40">
-                        {/* Submenu 1: Approvals (Admin & Managers) */}
                         <Link
                           to="/task-extension-requests"
                           className={`
@@ -802,7 +801,6 @@ const Sidebar = ({ children }) => {
                           Extension Approvals
                         </Link>
 
-                        {/* Submenu 2: Master Rules (Strictly Admin / Super / Owner) */}
                         {(isSuper ||
                           normalizedRole.includes("admin") ||
                           normalizedRole.includes("owner")) && (
@@ -831,7 +829,7 @@ const Sidebar = ({ children }) => {
                     )}
                 </div>
               </div>
-            )}
+            )} */}
           {/* 4. Task Reassignment */}
           {hasPermission("task_reassigning", "read") &&
             isModuleEnabled("DO_THIS2") && (

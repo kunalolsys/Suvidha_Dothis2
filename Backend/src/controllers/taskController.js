@@ -843,6 +843,15 @@ export const getAllTasksWithStats = async (req, res) => {
     }
 
     // =========================
+    // ⚙️ PARALLEL MODULE ENABLE CHECK
+    // =========================
+    const moduleSettingsPromise = ModuleSetting.find({
+      moduleKey: { $in: ["FMS_ENGINE", "DO_THIS2"] },
+    })
+      .select("moduleKey isEnabled")
+      .lean();
+
+    // =========================
     // 👥 ROLE BASED FILTER
     // =========================
     const andConditions = [];
@@ -855,16 +864,19 @@ export const getAllTasksWithStats = async (req, res) => {
     ) {
       // Full access → no restriction
     } else if (role === "sr.manager" || role === "srmanager") {
-      const srManagerId = userId;
+      const srManagerId = new mongoose.Types.ObjectId(userId);
 
       const managers = await User.find({ reportingManager: srManagerId })
         .select("_id")
         .lean();
       const managerIds = managers.map((m) => m._id);
 
-      const members = await User.find({ reportingManager: { $in: managerIds } })
-        .select("_id")
-        .lean();
+      const members =
+        managerIds.length > 0
+          ? await User.find({ reportingManager: { $in: managerIds } })
+              .select("_id")
+              .lean()
+          : [];
       const memberIds = members.map((m) => m._id);
 
       const allIds = [srManagerId, ...managerIds, ...memberIds];
@@ -873,10 +885,10 @@ export const getAllTasksWithStats = async (req, res) => {
         $or: [{ assignedBy: { $in: allIds } }, { assignedTo: { $in: allIds } }],
       });
     } else if (role === "manager") {
-      const managerId = userId;
+      const managerId = new mongoose.Types.ObjectId(userId);
 
       const memberUsers = await User.find({ reportingManager: managerId })
-        .populate("role", "name displayName")
+        .populate("role", "name")
         .select("_id role")
         .lean();
 
@@ -892,26 +904,13 @@ export const getAllTasksWithStats = async (req, res) => {
     } else {
       // 👤 Member
       if (userId) {
-        andConditions.push({ assignedTo: userId });
+        andConditions.push({
+          assignedTo: new mongoose.Types.ObjectId(userId),
+        });
       }
     }
 
-    // =========================
-    // 🧠 DO_THIS TASK FILTER
-    // =========================
-    const filter = {
-      ...dateFilter,
-      taskType: { $ne: "RecurringTask" },
-      isDeleted: { $ne: true },
-      ...(andConditions.length > 0 && { $and: andConditions }),
-    };
-
-    // =========================
-    // ⚙️ MODULE ENABLE CHECK
-    // =========================
-    const moduleSettings = await ModuleSetting.find({
-      moduleKey: { $in: ["FMS_ENGINE", "DO_THIS2"] },
-    }).lean();
+    const moduleSettings = await moduleSettingsPromise;
 
     const isModuleEnabled = (key) => {
       const mod = moduleSettings.find((m) => m.moduleKey === key);
@@ -922,14 +921,23 @@ export const getAllTasksWithStats = async (req, res) => {
     const isDoThisEnabled = isModuleEnabled("DO_THIS2");
 
     // =========================
-    // 🧩 FMS FILTER BUILDING
+    // 🧠 DO_THIS TASK MATCH FILTER
+    // =========================
+    const filter = {
+      ...dateFilter,
+      taskType: { $ne: "RecurringTask" },
+      isDeleted: { $ne: true },
+      ...(andConditions.length > 0 && { $and: andConditions }),
+    };
+
+    // =========================
+    // 🧩 FMS TASK MATCH FILTER
     // =========================
     const fmsFilter = {
       isTerminated: { $ne: true },
       status: { $nin: ["Terminated"] },
     };
 
-    // Apply role filter mapped for FMS (assignedBy -> updatedBy)
     if (andConditions.length > 0) {
       fmsFilter.$and = andConditions.map((cond) => {
         if (cond.$or) {
@@ -944,92 +952,56 @@ export const getAllTasksWithStats = async (req, res) => {
       });
     }
 
-    // Apply DATE FILTER (use plannedStartDate for FMS tasks)
     if (dateFilter.createdAt) {
       fmsFilter.plannedStartDate = dateFilter.createdAt;
     }
 
     // =========================
-    // 🚀 PARALLEL DB EXECUTION
+    // 🚀 ULTRA-FAST AGGREGATION COUNTS (NO DOCUMENTS FETCHED)
     // =========================
-    const [tasks, fmsTasks] = await Promise.all([
+    const [taskStats, fmsStats] = await Promise.all([
       isDoThisEnabled
-        ? Task.find(filter)
-            .populate("assignedTo", "name email department")
-            .populate("assignedBy", "name email")
-            .populate("departmentOfAssignToUser", "name")
-            .populate("dependencyConfig.taskDependent", "title")
-            .sort({ createdAt: -1 })
-            .lean()
+        ? Task.aggregate([
+            { $match: filter },
+            { $group: { _id: "$status", count: { $sum: 1 } } },
+          ])
         : Promise.resolve([]),
 
       isFmsEnabled
-        ? FmsInstanceTask.find(fmsFilter)
-            .populate("assignedTo", "name email department")
-            .populate("updatedBy", "name email")
-            .populate("departmentOfAssignToUser", "name")
-            .sort({ createdAt: -1 })
-            .lean()
+        ? FmsInstanceTask.aggregate([
+            { $match: fmsFilter },
+            { $group: { _id: "$status", count: { $sum: 1 } } },
+          ])
         : Promise.resolve([]),
     ]);
 
-    // Map FMS tasks to standard task format
-    const mappedFmsTasks = fmsTasks.map((task) => ({
-      ...task,
-      _id: task._id,
-      TaskId: task.taskId,
-      title: task.description,
-      description: task.description,
-      startDate: task.plannedStartDate,
-      dueDate: task.plannedDueDate,
-      status: task.status,
-      assignedTo: task.assignedTo,
-      assignedBy: task.updatedBy || null,
-      departmentOfAssignToUser: task.departmentOfAssignToUser,
-      taskType: "FmsInstanceTask",
-      createdAt: task.createdAt,
-    }));
-
-    const allTasks = [...tasks, ...mappedFmsTasks].sort(
-      (a, b) => new Date(b.createdAt) - new Date(a.createdAt),
-    );
-
-    // =========================
-    // 📊 STATUS COUNTS
-    // =========================
-    const visibleTasks = allTasks;
-
     const statusCounts = {
-      Pending: visibleTasks.filter((t) => t.status === "Pending").length,
-      Completed: visibleTasks.filter((t) => t.status === "Completed").length,
-      Delayed: visibleTasks.filter((t) => t.status === "Delayed").length,
-      Upcoming: visibleTasks.filter((t) => t.status === "Upcoming").length,
-      Overdue: visibleTasks.filter((t) => t.status === "Overdue").length,
-      // Overdue: visibleTasks.filter((t) => {
-      //   if (t.status === "Overdue") return true;
-      //   // Check dynamic overdue condition if status isn't explicitly set
-      //   if (
-      //     t.dueDate &&
-      //     new Date(t.dueDate) < todayStart &&
-      //     !["Completed", "Stopped", "Not Done"].includes(t.status)
-      //   ) {
-      //     return true;
-      //   }
-      //   return false;
-      // }).length,
+      Pending: 0,
+      Completed: 0,
+      Delayed: 0,
+      Upcoming: 0,
+      Overdue: 0,
     };
+
+    let total = 0;
+
+    for (const item of [...taskStats, ...fmsStats]) {
+      total += item.count;
+      if (Object.prototype.hasOwnProperty.call(statusCounts, item._id)) {
+        statusCounts[item._id] += item.count;
+      }
+    }
 
     return res.status(200).json({
       success: true,
-      total: visibleTasks.length,
+      total,
       counts: statusCounts,
-      data: visibleTasks,
     });
   } catch (error) {
     console.error("Error in getAllTasksWithStats:", error);
     return res.status(500).json({
       success: false,
-      message: "Failed to fetch tasks",
+      message: "Failed to fetch task stats",
     });
   }
 };
@@ -1063,7 +1035,27 @@ export const filterTasks = handleAsync(async (req, res) => {
     assignedBy,
     startDate,
     endDate,
+    sortBy = "createdAt", // 🟢 Default sort field
+    sortOrder = "desc", // 🟢 Default sort direction ('asc' or 'desc')
   } = req.body;
+
+  // 🟢 Allowed Sort Fields Mapping
+  const allowedSortFields = {
+    startDate: "startDate",
+    dueDate: "dueDate",
+    completedAt: "completedAt",
+    status: "status",
+    createdAt: "createdAt",
+  };
+  const targetSortField = allowedSortFields[sortBy] || "createdAt";
+  const sortDirection = sortOrder === "asc" ? 1 : -1;
+  const mongoSort = { [targetSortField]: sortDirection };
+  const isDateField = [
+    "startDate",
+    "dueDate",
+    "completedAt",
+    "createdAt",
+  ].includes(targetSortField);
 
   const skip = (page - 1) * limit;
 
@@ -1113,29 +1105,79 @@ export const filterTasks = handleAsync(async (req, res) => {
   }
 
   // 🔍 SEARCH
-  if (search) {
+  if (search && search.trim()) {
+    const escapedSearch = search.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
     andConditions.push({
-      $or: [{ title: { $regex: search, $options: "i" } }, { TaskId: search }],
+      $or: [
+        { title: { $regex: escapedSearch, $options: "i" } },
+        { TaskId: { $regex: escapedSearch, $options: "i" } },
+      ],
     });
   }
 
   // 📊 STAT FILTER (🟢 FIXED STANDARD TASK OVERDUE FILTER)
+  // if (stat === "overdue") {
+  //   andConditions.push({
+  //     $or: [
+  //       { status: "Overdue" },
+  //       {
+  //         dueDate: { $lt: now },
+  //         status: { $nin: ["Completed", "Stopped", "Not Done"] },
+  //       },
+  //       {
+  //         endDate: { $lt: now },
+  //         status: { $nin: ["Completed", "Stopped", "Not Done"] },
+  //       },
+  //     ],
+  //   });
+  // }
+  // if (stat === "dueToday") {
+  //   andConditions.push({
+  //     dueDate: { $gte: todayStart, $lte: todayEnd },
+  //   });
+  // }
+
+  // if (stat === "completed") {
+  //   query.status = "Completed";
+  // }
+  // if (stat === "pending") {
+  //   query.status = "Pending";
+  // }
+
+  // // 📌 TAB CATEGORY
+  // if (!stat) {
+  //   if (taskCategory === "today_backlog") {
+  //     const start = startOfDay(new Date());
+  //     const end = endOfDay(new Date());
+  //     andConditions.push({
+  //       status: { $in: ["Pending", "Delayed", "Overdue"] },
+  //     });
+  //     andConditions.push({
+  //       taskType: "DelegationTask",
+  //     });
+  //     andConditions.push({
+  //       startDate: { $gte: start, $lte: end },
+  //     });
+  //   }
+
+  //   if (taskCategory === "upcoming") {
+  //     query.status = "Upcoming";
+  //   }
+
+  //   if (taskCategory === "completed") {
+  //     query.status = "Completed";
+  //   }
+  // }
+// 📊 STAT FILTER (Due Date based)
   if (stat === "overdue") {
     andConditions.push({
-      $or: [
-        { status: "Overdue" },
-        {
-          dueDate: { $lt: now },
-          status: { $nin: ["Completed", "Stopped", "Not Done"] },
-        },
-        {
-          endDate: { $lt: now },
-          status: { $nin: ["Completed", "Stopped", "Not Done"] },
-        },
-      ],
+      dueDate: { $lt: now },
+      status: { $nin: ["Completed", "Stopped", "Not Done"] },
     });
   }
-  if (stat === "dueToday") {
+
+  if (stat === "dueToday" || stat === "today") {
     andConditions.push({
       dueDate: { $gte: todayStart, $lte: todayEnd },
     });
@@ -1144,35 +1186,38 @@ export const filterTasks = handleAsync(async (req, res) => {
   if (stat === "completed") {
     query.status = "Completed";
   }
+
   if (stat === "pending") {
     query.status = "Pending";
   }
 
-  // 📌 TAB CATEGORY
+  // 📌 TAB CATEGORY (Due Date based)
   if (!stat) {
-    if (taskCategory === "today_backlog") {
-      const start = startOfDay(new Date());
-      const end = endOfDay(new Date());
+    if (taskCategory === "today_backlog" || taskCategory === "today") {
       andConditions.push({
         status: { $in: ["Pending", "Delayed", "Overdue"] },
-      });
-      andConditions.push({
-        taskType: "DelegationTask",
-      });
-      andConditions.push({
-        startDate: { $gte: start, $lte: end },
+        dueDate: { $gte: todayStart, $lte: todayEnd },
       });
     }
 
     if (taskCategory === "upcoming") {
-      query.status = "Upcoming";
+      andConditions.push({
+        dueDate: { $gt: todayEnd },
+        status: { $nin: ["Completed", "Stopped", "Not Done"] },
+      });
+    }
+
+    if (taskCategory === "overdue") {
+      andConditions.push({
+        dueDate: { $lt: now },
+        status: { $nin: ["Completed", "Stopped", "Not Done"] },
+      });
     }
 
     if (taskCategory === "completed") {
       query.status = "Completed";
     }
   }
-
   // 📊 STATUS FILTER
   if (status && status !== "all") {
     query.status = status;
@@ -1241,6 +1286,7 @@ export const filterTasks = handleAsync(async (req, res) => {
   const isFmsEnabled = isModuleEnabled("FMS_ENGINE");
   const isDoThisEnabled = isModuleEnabled("DO_THIS2");
 
+  // 🟢 ORIGINAL Task.find(query) — Keeps Mongoose ObjectId casting intact
   const [tasks, total] = await Promise.all([
     isDoThisEnabled
       ? Task.find(query)
@@ -1248,7 +1294,8 @@ export const filterTasks = handleAsync(async (req, res) => {
           .populate("assignedBy", "name email")
           .populate("departmentOfAssignToUser", "name")
           .populate("dependencyConfig.taskDependent", "title")
-          .sort({ createdAt: -1 })
+          .sort(mongoSort)
+          .lean()
       : Promise.resolve([]),
 
     isDoThisEnabled ? Task.countDocuments(query) : Promise.resolve(0),
@@ -1301,9 +1348,9 @@ export const filterTasks = handleAsync(async (req, res) => {
 
     const searchDays =
       template.frequency === "Yearly"
-        ? 366 * 5
+        ? 366
         : template.frequency === "Half Yearly"
-          ? 366 * 2
+          ? 366
           : template.frequency === "Quarterly"
             ? 366
             : 120;
@@ -1470,9 +1517,12 @@ export const filterTasks = handleAsync(async (req, res) => {
     );
   }
 
-  if (search) {
-    finalVirtualRecurring = finalVirtualRecurring.filter((task) =>
-      task.title.toLowerCase().includes(search.toLowerCase()),
+  if (search && search.trim()) {
+    const q = search.trim().toLowerCase();
+    finalVirtualRecurring = finalVirtualRecurring.filter(
+      (task) =>
+        task.title?.toLowerCase().includes(q) ||
+        task.TaskId?.toLowerCase().includes(q),
     );
   }
 
@@ -1494,11 +1544,16 @@ export const filterTasks = handleAsync(async (req, res) => {
   }
   if (createdBy) fmsQuery.updatedBy = createdBy;
 
-  if (search) {
-    fmsQuery.$or = [
-      { description: { $regex: search, $options: "i" } },
-      { taskId: search },
-    ];
+  if (search && search.trim()) {
+    const escapedSearch = search.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+    fmsQuery.$and = fmsQuery.$and || [];
+    fmsQuery.$and.push({
+      $or: [
+        { description: { $regex: escapedSearch, $options: "i" } },
+        { taskId: { $regex: escapedSearch, $options: "i" } },
+      ],
+    });
   }
 
   if (status && status !== "all") fmsQuery.status = status;
@@ -1593,7 +1648,40 @@ export const filterTasks = handleAsync(async (req, res) => {
       }))
     : [];
 
-  let allTasks = [...tasks];
+  // 🟢 Proper chronological sorting (null/missing dates always at bottom)
+  const sortList = (list) =>
+    list.sort((a, b) => {
+      if (isDateField) {
+        const rawA = a[targetSortField];
+        const rawB = b[targetSortField];
+
+        const timeA = rawA ? new Date(rawA).getTime() : NaN;
+        const timeB = rawB ? new Date(rawB).getTime() : NaN;
+
+        const isValidA = !Number.isNaN(timeA);
+        const isValidB = !Number.isNaN(timeB);
+
+        if (!isValidA && !isValidB) {
+          return new Date(b.createdAt) - new Date(a.createdAt);
+        }
+        if (!isValidA) return 1;
+        if (!isValidB) return -1;
+
+        if (timeA !== timeB) {
+          return (timeA - timeB) * sortDirection;
+        }
+        return new Date(b.createdAt) - new Date(a.createdAt);
+      }
+
+      const valA = String(a[targetSortField] || "").toLowerCase();
+      const valB = String(b[targetSortField] || "").toLowerCase();
+      const cmp = valA.localeCompare(valB);
+      if (cmp !== 0) return cmp * sortDirection;
+
+      return new Date(b.createdAt) - new Date(a.createdAt);
+    });
+
+  let allTasks = sortList([...tasks]);
 
   const totalTasks = allTasks.length;
   const paginatedTasks = allTasks.slice(skip, skip + Number(limit));
@@ -1603,7 +1691,7 @@ export const filterTasks = handleAsync(async (req, res) => {
     taskCategory === "upcoming" && (!taskType || taskType === "RecurringTask");
 
   if (shouldShowFutureRecurring) {
-    recurringResponse = finalVirtualRecurring;
+    recurringResponse = sortList([...finalVirtualRecurring]);
   }
 
   res.json({
@@ -1677,14 +1765,24 @@ export const filterFMSTasks = handleAsync(async (req, res) => {
   }
   if (createdBy) fmsQuery.updatedBy = createdBy;
   if (assignedBy) fmsQuery.assignedBy = assignedBy;
+  if (search && search.trim()) {
+    const escapedSearch = search.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-  // SEARCH
-  if (search) {
-    fmsQuery.$or = [
-      { description: { $regex: search, $options: "i" } },
-      { taskId: search },
-    ];
+    fmsQuery.$and = fmsQuery.$and || [];
+    fmsQuery.$and.push({
+      $or: [
+        { description: { $regex: escapedSearch, $options: "i" } },
+        { taskId: { $regex: escapedSearch, $options: "i" } },
+      ],
+    });
   }
+  // SEARCH
+  // if (search) {
+  //   fmsQuery.$or = [
+  //     { description: { $regex: search, $options: "i" } },
+  //     { taskId: search },
+  //   ];
+  // }
 
   // STATUS
   if (status && status !== "all") fmsQuery.status = status;
@@ -1858,9 +1956,14 @@ export const exportMYTasks = handleAsync(async (req, res) => {
   }
 
   // 🔍 SEARCH
-  if (search) {
+  if (search && search.trim()) {
+    const escapedSearch = search.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
     andConditions.push({
-      $or: [{ title: { $regex: search, $options: "i" } }, { TaskId: search }],
+      $or: [
+        { title: { $regex: escapedSearch, $options: "i" } },
+        { TaskId: { $regex: escapedSearch, $options: "i" } },
+      ],
     });
   }
 
@@ -2252,9 +2355,12 @@ export const exportMYTasks = handleAsync(async (req, res) => {
   }
 
   // 3. OTHER FILTERS (search, stat, etc.)
-  if (search) {
-    finalVirtualRecurring = finalVirtualRecurring.filter((task) =>
-      task.title.toLowerCase().includes(search.toLowerCase()),
+  if (search && search.trim()) {
+    const q = search.trim().toLowerCase();
+    finalVirtualRecurring = finalVirtualRecurring.filter(
+      (task) =>
+        task.title?.toLowerCase().includes(q) ||
+        task.TaskId?.toLowerCase().includes(q),
     );
   }
 
@@ -2278,11 +2384,16 @@ export const exportMYTasks = handleAsync(async (req, res) => {
   if (createdBy) fmsQuery.updatedBy = createdBy;
 
   // SEARCH
-  if (search) {
-    fmsQuery.$or = [
-      { description: { $regex: search, $options: "i" } },
-      { taskId: search },
-    ];
+  if (search && search.trim()) {
+    const escapedSearch = search.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+    fmsQuery.$and = fmsQuery.$and || [];
+    fmsQuery.$and.push({
+      $or: [
+        { description: { $regex: escapedSearch, $options: "i" } },
+        { taskId: { $regex: escapedSearch, $options: "i" } },
+      ],
+    });
   }
 
   // STATUS
@@ -2450,11 +2561,16 @@ export const exportMYFMSTasks = handleAsync(async (req, res) => {
   }
   if (createdBy) fmsQuery.updatedBy = createdBy;
 
-  if (search) {
-    fmsQuery.$or = [
-      { description: { $regex: search, $options: "i" } },
-      { taskId: search },
-    ];
+  if (search && search.trim()) {
+    const escapedSearch = search.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+    fmsQuery.$and = fmsQuery.$and || [];
+    fmsQuery.$and.push({
+      $or: [
+        { description: { $regex: escapedSearch, $options: "i" } },
+        { taskId: { $regex: escapedSearch, $options: "i" } },
+      ],
+    });
   }
 
   if (status && status !== "all") fmsQuery.status = status;
@@ -2808,7 +2924,6 @@ export const getFMSTaskStats = handleAsync(async (req, res) => {
     },
   });
 });
-
 export const getRoleBasedTasks = handleAsync(async (req, res) => {
   const {
     userId,
@@ -2824,8 +2939,39 @@ export const getRoleBasedTasks = handleAsync(async (req, res) => {
     selectedSrManager,
     selectedTemplate,
     taskTypeFilter = "all", // "all" | "dothis" | "fms"
+    sortBy = "createdAt", // 🟢 Added
+    sortOrder = "desc", // 🟢 Added
   } = req.body;
 
+  const allowedSortFields = {
+    startDate: "startDate",
+    dueDate: "dueDate",
+    completedAt: "completedAt",
+    status: "status",
+    createdAt: "createdAt",
+  };
+
+  // FMS ke field names thode alag hain (plannedStartDate, plannedDueDate)
+  const allowedFmsSortFields = {
+    startDate: "plannedStartDate",
+    dueDate: "plannedDueDate",
+    completedAt: "completedAt",
+    status: "status",
+    createdAt: "createdAt",
+  };
+
+  const targetSortField = allowedSortFields[sortBy] || "createdAt";
+  const targetFmsSortField = allowedFmsSortFields[sortBy] || "createdAt";
+  const sortDirection = sortOrder === "asc" ? 1 : -1;
+  const isDateField = [
+    "startDate",
+    "dueDate",
+    "completedAt",
+    "createdAt",
+  ].includes(targetSortField);
+
+  const mongoSort = { [targetSortField]: sortDirection };
+  const fmsMongoSort = { [targetFmsSortField]: sortDirection };
   const role = rawRole ? rawRole.toLowerCase().replace(/\s+/g, "") : "";
   const pageNum = Number(page);
   const limitNum = Number(limit);
@@ -2934,9 +3080,17 @@ export const getRoleBasedTasks = handleAsync(async (req, res) => {
       }
     }
 
-    if (search) {
+    // 🔍 SEARCH
+    if (search && search.trim()) {
+      const escapedSearch = search
+        .trim()
+        .replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
       andConditions.push({
-        $or: [{ title: { $regex: search, $options: "i" } }, { TaskId: search }],
+        $or: [
+          { title: { $regex: escapedSearch, $options: "i" } },
+          { TaskId: { $regex: escapedSearch, $options: "i" } },
+        ],
       });
     }
 
@@ -3069,11 +3223,15 @@ export const getRoleBasedTasks = handleAsync(async (req, res) => {
       fmsAndConditions.push({ assignedTo: userId });
     }
 
-    if (search) {
+    if (search && search.trim()) {
+      const escapedSearch = search
+        .trim()
+        .replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
       fmsAndConditions.push({
         $or: [
-          { description: { $regex: search, $options: "i" } },
-          { taskId: search },
+          { description: { $regex: escapedSearch, $options: "i" } },
+          { taskId: { $regex: escapedSearch, $options: "i" } },
         ],
       });
     }
@@ -3127,7 +3285,7 @@ export const getRoleBasedTasks = handleAsync(async (req, res) => {
             .populate("assignedBy", "name email")
             .populate("departmentOfAssignToUser", "name")
             .populate("dependencyConfig.taskDependent", "title")
-            .sort({ createdAt: -1 })
+            .sort(mongoSort)
             .lean()
         : Promise.resolve([]),
 
@@ -3139,7 +3297,7 @@ export const getRoleBasedTasks = handleAsync(async (req, res) => {
             .populate("assignedBy", "name email")
             .populate("updatedBy", "name email")
             .populate("departmentOfAssignToUser", "name")
-            .sort({ createdAt: -1 })
+            .sort(fmsMongoSort)
             .lean()
         : Promise.resolve([]),
 
@@ -3175,9 +3333,38 @@ export const getRoleBasedTasks = handleAsync(async (req, res) => {
       ? tasksResult.map((task) => normalizeTask(task))
       : [];
 
-  const merged = [...mappedTasks, ...mappedFmsTasks].sort(
-    (a, b) => new Date(b.createdAt) - new Date(a.createdAt),
-  );
+  // 🟢 PROPER DYNAMIC SORT ON MERGED ARRAY (Null dates always at bottom)
+  const merged = [...mappedTasks, ...mappedFmsTasks].sort((a, b) => {
+    if (isDateField) {
+      const rawA = a[targetSortField];
+      const rawB = b[targetSortField];
+
+      const timeA = rawA ? new Date(rawA).getTime() : NaN;
+      const timeB = rawB ? new Date(rawB).getTime() : NaN;
+
+      const isValidA = !Number.isNaN(timeA);
+      const isValidB = !Number.isNaN(timeB);
+
+      if (!isValidA && !isValidB) {
+        return new Date(b.createdAt) - new Date(a.createdAt);
+      }
+      if (!isValidA) return 1; // Null/invalid date always goes to bottom
+      if (!isValidB) return -1;
+
+      if (timeA !== timeB) {
+        return (timeA - timeB) * sortDirection;
+      }
+      return new Date(b.createdAt) - new Date(a.createdAt);
+    }
+
+    // String field sorting (e.g., status)
+    const valA = String(a[targetSortField] || "").toLowerCase();
+    const valB = String(b[targetSortField] || "").toLowerCase();
+    const cmp = valA.localeCompare(valB);
+    if (cmp !== 0) return cmp * sortDirection;
+
+    return new Date(b.createdAt) - new Date(a.createdAt);
+  });
 
   const totalTasks = tasksTotal + fmsTotal;
   const paginatedTasks = merged.slice(skip, skip + limitNum);
@@ -3311,9 +3498,16 @@ export const exportRoleBasedTasks = handleAsync(async (req, res) => {
       }
     }
 
-    if (search) {
+    if (search && search.trim()) {
+      const escapedSearch = search
+        .trim()
+        .replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
       andConditions.push({
-        $or: [{ title: { $regex: search, $options: "i" } }, { TaskId: search }],
+        $or: [
+          { title: { $regex: escapedSearch, $options: "i" } },
+          { TaskId: { $regex: escapedSearch, $options: "i" } },
+        ],
       });
     }
 
@@ -3449,11 +3643,15 @@ export const exportRoleBasedTasks = handleAsync(async (req, res) => {
       fmsAndConditions.push({ assignedTo: userId });
     }
 
-    if (search) {
+    if (search && search.trim()) {
+      const escapedSearch = search
+        .trim()
+        .replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
       fmsAndConditions.push({
         $or: [
-          { description: { $regex: search, $options: "i" } },
-          { taskId: search },
+          { description: { $regex: escapedSearch, $options: "i" } },
+          { taskId: { $regex: escapedSearch, $options: "i" } },
         ],
       });
     }
@@ -3576,6 +3774,7 @@ export const exportRoleBasedTasks = handleAsync(async (req, res) => {
     "Department",
     "Start Date",
     "Due Date",
+    "Completed At",
     "Created At",
   ];
 
@@ -3607,6 +3806,9 @@ export const exportRoleBasedTasks = handleAsync(async (req, res) => {
         : "-",
       "Due Date": item.dueDate
         ? new Date(item.dueDate).toLocaleDateString("en-IN")
+        : "-",
+      "Completed At": item.completedAt
+        ? new Date(item.completedAt).toLocaleDateString("en-IN")
         : "-",
       "Created At": item.createdAt
         ? new Date(item.createdAt).toLocaleDateString("en-IN")
@@ -4587,17 +4789,27 @@ export const importTasks = handleAsync(async (req, res, next) => {
           if (!user) throw new Error(`User "${assignToEmails[0]}" not found.`);
 
           for (const deptName of departmentNames) {
+            const escapedDept = deptName
+              .trim()
+              .replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
             const department = await Department.findOne({
-              name: { $regex: `^${deptName}$`, $options: "i" },
+              name: { $regex: `^\\s*${escapedDept}\\s*$`, $options: "i" },
             });
             if (!department)
               throw new Error(`Department "${deptName}" not found.`);
 
-            const belongs =
-              Array.isArray(user.department) &&
-              user.department.some(
-                (id) => id.toString() === department._id.toString(),
-              );
+            const userDepts = Array.isArray(user.department)
+              ? user.department
+              : user.department
+                ? [user.department]
+                : [];
+
+            const belongs = userDepts.some((d) => {
+              const deptId = d?._id || d?.department || d;
+              return deptId && deptId.toString() === department._id.toString();
+            });
+
             if (!belongs)
               throw new Error(
                 `User "${assignToEmails[0]}" does not belong to "${deptName}".`,
@@ -4721,7 +4933,33 @@ export const importTasks = handleAsync(async (req, res, next) => {
               .split(",")
               .map((item) => ({ text: item.trim() }))
           : [];
+        const assignByEmpCodeKey = Object.keys(row).find((k) =>
+          [
+            "assignbyemployeecode",
+            "assignedbyemployeecode",
+            "employeecode",
+          ].includes(normalize(k)),
+        );
+        const trimmedAssignByEmpCode = trimStr(
+          assignByEmpCodeKey ? row[assignByEmpCodeKey] : "",
+        );
 
+        let assignedByUserId = req.user._id;
+        if (trimmedAssignByEmpCode) {
+          const assignByUser = await User.findOne({
+            employeeCode: {
+              $regex: `^${trimmedAssignByEmpCode.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
+              $options: "i",
+            },
+          }).select("_id");
+
+          if (!assignByUser) {
+            throw new Error(
+              `Assign By user with Employee Code "${trimmedAssignByEmpCode}" not found.`,
+            );
+          }
+          assignedByUserId = assignByUser._id;
+        }
         const rowCreated = [];
 
         for (const item of usersForThisRow) {
@@ -4941,7 +5179,7 @@ export const importTasks = handleAsync(async (req, res, next) => {
             title: title.trim(),
             description: description.trim(),
             assignedTo: user._id,
-            assignedBy: req.user._id,
+            assignedBy: assignedByUserId,
             createdBy: req.user._id,
             startDate: finalStartDate,
             dueDate: finalDueDate,

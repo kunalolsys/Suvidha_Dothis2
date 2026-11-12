@@ -644,6 +644,33 @@ const PCView = () => {
   const [reopenLoading, setReopenLoading] = useState(false);
   const [refreshTaskAfterReopen, setRefreshTaskAfterReopen] = useState(false);
 
+  // Server-side Sorting State
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: "asc" });
+
+  // Toggle Handler (Triggers backend refetch and resets page to 1)
+  const handleSort = (columnKey) => {
+    let direction = "asc";
+    if (sortConfig.key === columnKey && sortConfig.direction === "asc") {
+      direction = "desc";
+    }
+    setSortConfig({ key: columnKey, direction });
+    setLocalCurrentPage(1);
+  };
+
+  // Helper for Header Sort Icons
+  const getSortIcon = (columnKey) => {
+    if (sortConfig.key !== columnKey) {
+      return (
+        <ArrowUpDown className="h-3.5 w-3.5 text-gray-400 opacity-60 ml-1 inline" />
+      );
+    }
+    return sortConfig.direction === "asc" ? (
+      <ArrowUp className="h-3.5 w-3.5 text-blue-600 ml-1 inline" />
+    ) : (
+      <ArrowDown className="h-3.5 w-3.5 text-blue-600 ml-1 inline" />
+    );
+  };
+
   const handleReopenTask = async () => {
     if (!reopenReason.trim()) {
       toast.error("Please enter reopen reason");
@@ -815,7 +842,7 @@ const PCView = () => {
   };
   const departmentId = getDepartmentIds(currentUser?.department);
 
-  // ⚡ SERVER-SIDE FETCH TRIGGER PASSING taskTypeFilter
+  // ⚡ SERVER-SIDE FETCH TRIGGER PASSING taskTypeFilter AND sortConfig
   useEffect(() => {
     if (currentUser?._id) {
       dispatch(
@@ -830,6 +857,10 @@ const PCView = () => {
           selectedSrManager,
           search: debouncedSearch,
           taskTypeFilter: engineViewTab, // 👈 PASSES SUB-TAB TO BACKEND
+          ...(sortConfig.key && {
+            sortBy: sortConfig.key,
+            sortOrder: sortConfig.direction,
+          }),
           filters: {
             stat: selectedStatFilter || null,
             taskCategory: selectedStatFilter
@@ -862,6 +893,7 @@ const PCView = () => {
     debouncedSearch,
     reopenLoading,
     refreshTaskAfterReopen,
+    sortConfig,
   ]);
 
   // ⚡ DYNAMIC HEADERS FOR FMS SUBMISSION DATA (isTableColumn === true)
@@ -957,60 +989,7 @@ const PCView = () => {
       setIsExporting(false);
     }
   };
-  const [sortConfig, setSortConfig] = useState({ key: null, direction: "asc" });
 
-  // 2. Click Handler (Toggle Ascending / Descending)
-  const handleSort = (columnKey) => {
-    let direction = "asc";
-    if (sortConfig.key === columnKey && sortConfig.direction === "asc") {
-      direction = "desc";
-    }
-    setSortConfig({ key: columnKey, direction });
-  };
-
-  // 3. Helper for Header Sort Icons
-  const getSortIcon = (columnKey) => {
-    if (sortConfig.key !== columnKey) {
-      return (
-        <ArrowUpDown className="h-3.5 w-3.5 text-gray-400 opacity-60 ml-1 inline" />
-      );
-    }
-    return sortConfig.direction === "asc" ? (
-      <ArrowUp className="h-3.5 w-3.5 text-blue-600 ml-1 inline" />
-    ) : (
-      <ArrowDown className="h-3.5 w-3.5 text-blue-600 ml-1 inline" />
-    );
-  };
-
-  // 4. Sorted Data Array
-  const sortedTasks = useMemo(() => {
-    const list = [...(fetchedTasks || [])];
-
-    if (!sortConfig.key) return list;
-
-    return list.sort((a, b) => {
-      // Status string comparison
-      if (sortConfig.key === "status") {
-        const valA = (a.status || "").toLowerCase();
-        const valB = (b.status || "").toLowerCase();
-        return sortConfig.direction === "asc"
-          ? valA.localeCompare(valB)
-          : valB.localeCompare(valA);
-      }
-
-      // Date comparison (startDate / dueDate)
-      const valA = a[sortConfig.key]
-        ? new Date(a[sortConfig.key]).getTime()
-        : 0;
-      const valB = b[sortConfig.key]
-        ? new Date(b[sortConfig.key]).getTime()
-        : 0;
-
-      if (valA < valB) return sortConfig.direction === "asc" ? -1 : 1;
-      if (valA > valB) return sortConfig.direction === "asc" ? 1 : -1;
-      return 0;
-    });
-  }, [fetchedTasks, sortConfig]);
   // --- Dynamic Table Headers ---
   const CommonTableHeaders = () => (
     <TableHeader>
@@ -1403,9 +1382,9 @@ const PCView = () => {
         <Table>
           <CommonTableHeaders />
           <TableBody>
-            {/* 🟢 Using sortedTasks instead of fetchedTasks */}
-            {sortedTasks.length > 0 ? (
-              sortedTasks.map((task, index) => renderCommonRow(task, index))
+            {/* 🟢 Directly using backend-sorted fetchedTasks */}
+            {Array.isArray(fetchedTasks) && fetchedTasks.length > 0 ? (
+              fetchedTasks.map((task, index) => renderCommonRow(task, index))
             ) : (
               <TableRow>
                 <TableCell

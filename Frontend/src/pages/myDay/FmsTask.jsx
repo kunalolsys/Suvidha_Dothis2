@@ -937,6 +937,7 @@ const TodayTasksTable = ({
             ))}
             <TableHead>Description</TableHead>
             <TableHead>Due Date & Time</TableHead>
+            <TableHead>Completed At</TableHead>
             <TableHead>Frequency</TableHead>
             <TableHead>Time Left</TableHead>
             <TableHead>Status</TableHead>
@@ -1082,6 +1083,16 @@ const TodayTasksTable = ({
 
                     <TableCell>
                       {task?.dueDate ? formatDate(task.dueDate) : "-"}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      {task.status === "Completed" &&
+                      (task.completedAt || task.updatedAt) ? (
+                        <span className="">
+                          {formatDate(task.completedAt || task.updatedAt)}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400">-</span>
+                      )}
                     </TableCell>
                     <TableCell>{task?.frequency ?? "-"}</TableCell>
                     <TableCell className="whitespace-nowrap">

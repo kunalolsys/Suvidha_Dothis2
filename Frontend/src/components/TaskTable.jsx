@@ -276,6 +276,7 @@ const TaskTable = ({
   const [uploadFile, setUploadFile] = useState(null);
   const [isImporting, setIsImporting] = useState(false);
   const [importError, setImportError] = useState(null);
+  const [importResult, setImportResult] = useState(null);
   const [errorFileUrl, setErrorFileUrl] = useState(null);
   const fileInputRef = useRef(null);
 
@@ -752,12 +753,12 @@ const TaskTable = ({
     setImportTaskType(type);
     setUploadFile(null);
     setImportError(null);
+    setImportResult(null);
     setErrorFileUrl(null);
     setUploadedAttachmentBackendNames([]);
     setUploadedAttachmentNames([]);
     setIsImportDialogOpen(true);
   };
-
   const templates = {
     delegation: {
       name: "Delegation Task",
@@ -767,6 +768,7 @@ const TaskTable = ({
         { name: "Assign To(Email)", type: "Text", required: true },
         { name: "Assign To(Name)", type: "Text", required: false },
         { name: "Assign To UserDepartment", type: "Text", required: true },
+        { name: "Assign By Employee Code", type: "Text", required: true },
         { name: "Check List", type: "Optional", required: false },
         { name: "Start Date", type: "DD-MM-YYYY", required: true },
         { name: "Task End Days", type: "Number", required: true },
@@ -777,6 +779,7 @@ const TaskTable = ({
         "user@example.com",
         "John",
         "Engineering",
+        "EMP001",
         '"item1,item2"',
         "01-08-2024",
         1,
@@ -790,6 +793,7 @@ const TaskTable = ({
         { name: "Assign To(Email)", type: "Text", required: true },
         { name: "Assign To(Name)", type: "Text", required: false },
         { name: "Assign To UserDepartment", type: "Text", required: true },
+        { name: "Assign By Employee Code", type: "Text", required: true },
         { name: "Check List", type: "Optional", required: false },
         { name: "Start Date", type: "DD-MM-YYYY", required: true },
         {
@@ -810,6 +814,7 @@ const TaskTable = ({
         "user@example.com",
         "John",
         "Eng",
+        "EMP001",
         '"itemA,itemB"',
         "01-08-2024",
         "Weekly",
@@ -826,6 +831,7 @@ const TaskTable = ({
         { name: "Assign To(Email)", type: "Text", required: true },
         { name: "Assign To(Name)", type: "Text", required: false },
         { name: "Assign To UserDepartment", type: "Text", required: true },
+        { name: "Assign By Employee Code", type: "Text", required: true },
         { name: "Check List", type: "Optional", required: false },
         { name: "Task End Days", type: "Number", required: false },
         {
@@ -843,6 +849,7 @@ const TaskTable = ({
         "user@example.com",
         "John",
         "Eng",
+        "EMP001",
         '"item1,item2"',
         1,
         "Planned to Planned",
@@ -875,6 +882,7 @@ const TaskTable = ({
       }
       setUploadFile(selectedFile);
       setImportError(null);
+      setImportResult(null);
       setErrorFileUrl(null);
     }
   };
@@ -887,6 +895,7 @@ const TaskTable = ({
 
     setIsImporting(true);
     setImportError(null);
+    setImportResult(null);
     setErrorFileUrl(null);
 
     const formData = new FormData();
@@ -904,31 +913,55 @@ const TaskTable = ({
         headers: { "Content-Type": "multipart/form-data" },
       });
       const data = response.data;
-      toast.success(data.message);
 
-      if (data.summary?.errors > 0 || data.summary?.skipped > 0) {
-        setImportError(
-          `Import completed with ${data.summary.errors} error(s) and ${data.summary.skipped} skipped row(s).`,
+      const failedLogs = Array.isArray(data.log)
+        ? data.log.filter(
+            (item) => item.status === "error" || item.status === "skipped",
+          )
+        : [];
+
+      setImportResult({
+        success: data.success,
+        message: data.message,
+        summary: data.summary || {
+          totalRows: 0,
+          imported: 0,
+          skipped: 0,
+          errors: 0,
+        },
+        failedLogs,
+      });
+
+      if (!data.success) {
+        toast.error(
+          failedLogs[0]?.reason || data.message || "Failed to import tasks.",
         );
-        if (data.errorFile) {
-          setErrorFileUrl(
-            `${import.meta.env.VITE_API_BASE_URL}/tasks/download?filePath=${encodeURIComponent(data.errorFile)}`,
-          );
-        }
+        setImportError(
+          data.message || "No tasks were imported. Check row errors below.",
+        );
+      } else if (failedLogs.length > 0) {
+        toast.warning(data.message);
+        onRefreshTasks({ page: currentPage, limit: itemsPerPage });
       } else {
+        toast.success(data.message);
         setImportError(null);
         setErrorFileUrl(null);
+        onRefreshTasks({ page: currentPage, limit: itemsPerPage });
       }
-      onRefreshTasks({ page: currentPage, limit: itemsPerPage });
+
+      if (data.errorFile) {
+        setErrorFileUrl(
+          `${import.meta.env.VITE_API_BASE_URL}/tasks/download?filePath=${encodeURIComponent(data.errorFile)}`,
+        );
+      }
     } catch (error) {
-      setImportError(
-        error.response?.data?.message || "Failed to import tasks.",
-      );
+      const errMsg = error.response?.data?.message || "Failed to import tasks.";
+      toast.error(errMsg);
+      setImportError(errMsg);
     } finally {
       setIsImporting(false);
     }
   };
-
   const handleImport = async () => {
     if (!uploadFile) {
       toast.error("Please upload a file first!");
@@ -2760,14 +2793,22 @@ const TaskTable = ({
       </Dialog>
 
       {/* IMPORT DIALOG */}
+      {/* IMPORT DIALOG */}
       <Dialog
+      className="sm:max-w-5xl max-h-[90vh] overflow-y-auto"
         open={isImportDialogOpen}
-        onOpenChange={setIsImportDialogOpen}
-        className="sm:max-w-6xl"
+        onOpenChange={(open) => {
+          setIsImportDialogOpen(open);
+          if (!open) {
+            setImportError(null);
+            setImportResult(null);
+            setErrorFileUrl(null);
+          }
+        }}
       >
-        <DialogContent>
+        <DialogContent >
           <DialogHeader>
-            <DialogTitle>
+            <DialogTitle className="text-xl font-bold">
               Import {importTaskType ? templates[importTaskType].name : ""}s
             </DialogTitle>
             <DialogDescription>
@@ -2776,51 +2817,67 @@ const TaskTable = ({
           </DialogHeader>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 py-4">
-            <div className="space-y-4 p-4 bg-gray-50 rounded-lg border">
-              <h4 className="font-semibold text-gray-800 flex items-center gap-2">
-                <CheckSquare className="w-5 h-5 text-gray-500" />
-                Required Columns Structure
-              </h4>
-              <div className="grid grid-cols-2 gap-4 p-3 bg-white border border-gray-200 rounded-lg">
-                <div>
-                  <h5 className="font-semibold mb-2 text-sm text-gray-800">
-                    Required Fields
-                  </h5>
-                  {importTaskType &&
-                    templates[importTaskType].columns
-                      .filter((c) => c.required)
-                      .map((col, index) => (
-                        <div
-                          key={index}
-                          className="flex items-center mb-1 gap-0 px-3 py-1.5 rounded-md text-xs font-semibold border bg-red-50 text-red-700 border-red-200"
-                        >
-                          <span>{col.name}</span>({col.type})
-                        </div>
-                      ))}
-                </div>
-                <div>
-                  <h5 className="font-semibold mb-2 text-sm text-gray-800">
-                    Optional Fields
-                  </h5>
-                  {importTaskType &&
-                    templates[importTaskType].columns
-                      .filter((c) => !c.required)
-                      .map((col, index) => (
-                        <div
-                          key={index}
-                          className="flex items-center mb-1 gap-2 px-3 py-1.5 rounded-md text-xs font-semibold border bg-gray-100 text-gray-600 border-gray-200"
-                        >
-                          <span>{col.name}</span>({col.type})
-                        </div>
-                      ))}
+            {/* Left Column: Required & Optional Fields */}
+            <div className="flex flex-col justify-between space-y-4 p-4 bg-gray-50 rounded-xl border">
+              <div className="space-y-3">
+                <h4 className="font-semibold text-gray-800 flex items-center gap-2 text-sm">
+                  <CheckSquare className="w-4 h-4 text-blue-600" />
+                  Required Columns Structure
+                </h4>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-white border border-gray-200 rounded-lg max-h-[280px] overflow-y-auto">
+                  <div>
+                    <h5 className="font-semibold mb-2 text-xs uppercase tracking-wide text-red-700">
+                      Required Fields
+                    </h5>
+                    <div className="space-y-1.5">
+                      {importTaskType &&
+                        templates[importTaskType].columns
+                          .filter((c) => c.required)
+                          .map((col, index) => (
+                            <div
+                              key={index}
+                              className="px-2.5 py-1.5 rounded-md text-xs font-medium border bg-red-50/70 text-red-800 border-red-200 break-words"
+                            >
+                              <span className="font-semibold">{col.name}</span>{" "}
+                              <span className="text-[11px] text-red-600">
+                                ({col.type})
+                              </span>
+                            </div>
+                          ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <h5 className="font-semibold mb-2 text-xs uppercase tracking-wide text-gray-600">
+                      Optional Fields
+                    </h5>
+                    <div className="space-y-1.5">
+                      {importTaskType &&
+                        templates[importTaskType].columns
+                          .filter((c) => !c.required)
+                          .map((col, index) => (
+                            <div
+                              key={index}
+                              className="px-2.5 py-1.5 rounded-md text-xs font-medium border bg-gray-100 text-gray-700 border-gray-200 break-words"
+                            >
+                              <span className="font-semibold">{col.name}</span>{" "}
+                              <span className="text-[11px] text-gray-500">
+                                ({col.type})
+                              </span>
+                            </div>
+                          ))}
+                    </div>
+                  </div>
                 </div>
               </div>
+
               <Button
                 variant="outline"
                 onClick={downloadTemplate}
-                className="w-full mt-2"
+                className="w-full bg-white hover:bg-blue-50 hover:text-blue-700 hover:border-blue-300 cursor-pointer"
               >
-                <Download className="mr-2 h-3 w-3" />
+                <Download className="mr-2 h-4 w-4" />
                 Download {importTaskType
                   ? templates[importTaskType].name
                   : ""}{" "}
@@ -2828,10 +2885,13 @@ const TaskTable = ({
               </Button>
             </div>
 
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label className="font-semibold">Upload Data File</Label>
-                <div className="flex flex-col items-center justify-center p-12 border-2 border-dashed border-gray-300 rounded-lg">
+            {/* Right Column: File Upload & Error Display */}
+            <div className="flex flex-col justify-between space-y-4">
+              <div className="space-y-2 flex-1 flex flex-col">
+                <Label className="font-semibold text-sm text-gray-800">
+                  Upload Data File
+                </Label>
+                <div className="flex-1 flex flex-col items-center justify-center p-8 border-2 border-dashed border-gray-300 hover:border-blue-400 hover:bg-blue-50/30 transition-colors rounded-xl">
                   <input
                     id="file-upload"
                     type="file"
@@ -2842,39 +2902,140 @@ const TaskTable = ({
                   />
                   <label
                     htmlFor="file-upload"
-                    className="flex flex-col items-center justify-center w-full h-full cursor-pointer"
+                    className="flex flex-col items-center justify-center w-full h-full cursor-pointer text-center"
                   >
-                    <UploadCloud className="w-14 h-14 text-gray-400 mb-2" />
+                    <UploadCloud className="w-12 h-12 text-blue-500 mb-2" />
                     <span className="text-sm font-semibold text-blue-600">
                       Click to upload
                     </span>
-                    <span className="text-xs text-gray-500">
-                      or drag and drop
+                    <span className="text-xs text-gray-500 mt-1">
+                      CSV, XLSX, or XLS files supported
                     </span>
                   </label>
                   {uploadFile && (
-                    <div className="mt-4 text-center text-sm text-green-600 font-medium">
-                      <p>Selected: {uploadFile.name}</p>
+                    <div className="mt-4 px-3 py-1.5 bg-green-50 border border-green-200 rounded-full text-xs text-green-700 font-medium">
+                      Selected: {uploadFile.name}
                     </div>
                   )}
                 </div>
               </div>
+
+              {/* Bulk Error / Skip Summary & Scrollable Table */}
+              {importResult &&
+              (importResult.failedLogs.length > 0 || !importResult.success) ? (
+                <div className="rounded-xl border border-red-200 bg-red-50/70 p-3 space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold">
+                      <span className="px-2 py-0.5 rounded-full bg-green-100 text-green-700">
+                        Imported: {importResult.summary.imported}
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-700">
+                        Errors: {importResult.summary.errors}
+                      </span>
+                      {importResult.summary.skipped > 0 && (
+                        <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                          Skipped: {importResult.summary.skipped}
+                        </span>
+                      )}
+                    </div>
+
+                    {errorFileUrl && (
+                      <a
+                        href={errorFileUrl}
+                        download
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-red-600 text-white text-xs font-medium hover:bg-red-700 transition-colors"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        Error CSV ({importResult.failedLogs.length})
+                      </a>
+                    )}
+                  </div>
+
+                  {importResult.failedLogs.length > 0 ? (
+                    <div className="max-h-40 overflow-y-auto rounded-lg border border-red-200 bg-white">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-red-100 text-red-900 sticky top-0">
+                          <tr>
+                            <th className="py-1.5 px-2.5 font-semibold w-14">
+                              Row
+                            </th>
+                            <th className="py-1.5 px-2.5 font-semibold w-20">
+                              Type
+                            </th>
+                            <th className="py-1.5 px-2.5 font-semibold">
+                              Reason
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {importResult.failedLogs
+                            .slice(0, 50)
+                            .map((item, idx) => (
+                              <tr key={idx} className="hover:bg-red-50/40">
+                                <td className="py-1.5 px-2.5 font-medium text-gray-800">
+                                  #{item.row}
+                                </td>
+                                <td className="py-1.5 px-2.5">
+                                  <span
+                                    className={`px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase ${
+                                      item.status === "skipped"
+                                        ? "bg-amber-100 text-amber-800"
+                                        : "bg-red-100 text-red-700"
+                                    }`}
+                                  >
+                                    {item.status}
+                                  </span>
+                                </td>
+                                <td className="py-1.5 px-2.5 text-gray-700 break-words">
+                                  {item.reason}
+                                </td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                      {importResult.failedLogs.length > 50 && (
+                        <div className="p-1.5 text-center text-[11px] text-gray-500 bg-gray-50 border-t">
+                          Showing first 50 of {importResult.failedLogs.length}{" "}
+                          issues. Download Error CSV for full list.
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    importError && (
+                      <p className="text-xs text-red-700 font-medium">
+                        {importError}
+                      </p>
+                    )
+                  )}
+                </div>
+              ) : (
+                importError && (
+                  <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700 space-y-2">
+                    <p className="font-medium whitespace-pre-line">
+                      {importError}
+                    </p>
+                  </div>
+                )
+              )}
             </div>
-            <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => setIsImportDialogOpen(false)}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={handleImport}
-                disabled={!uploadFile || isImporting}
-              >
-                {isImporting ? "Importing..." : "Import"}
-              </Button>
-            </DialogFooter>
           </div>
+
+          <DialogFooter className="border-t pt-4 gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setIsImportDialogOpen(false)}
+              className="cursor-pointer"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleImport}
+              disabled={!uploadFile || isImporting}
+              className="cursor-pointer"
+            >
+              {isImporting ? "Importing..." : "Import"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </Card>

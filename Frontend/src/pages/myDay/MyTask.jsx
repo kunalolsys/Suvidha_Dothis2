@@ -94,6 +94,7 @@ import {
   Modal as AntdModal,
   Descriptions,
   Modal,
+  Skeleton,
 } from "antd";
 const { RangePicker } = DatePicker;
 import * as Yup from "yup";
@@ -356,8 +357,10 @@ const TaskActions = ({
     </div>
   );
 };
+
 const getFieldKey = (fieldName) =>
   fieldName.replace(/[.[\]]/g, "_").replace(/\s+/g, "_");
+
 const buildValidationSchema = (fields) => {
   const shape = {};
 
@@ -397,7 +400,7 @@ const buildValidationSchema = (fields) => {
   return Yup.object().shape(shape);
 };
 
-/* ------------------ ✅ Component ------------------ */
+/* ------------------ Component ------------------ */
 const FmsFormModal = ({
   open,
   onClose,
@@ -568,6 +571,7 @@ const FmsFormModal = ({
     </div>
   );
 };
+
 // --- Helper: Pagination ---
 const Pagination = ({
   totalItems,
@@ -727,7 +731,7 @@ const FilterBar = ({
   selectedFilterTaskType,
   setSelectedFilterTaskType,
   selectedFilterStatus,
-  onFilterStatusChange, // 🟢 SYNCHRONIZED STATUS DROPDOWN CHANGE
+  onFilterStatusChange,
   showExport = false,
   onExport,
   isExporting,
@@ -778,10 +782,7 @@ const FilterBar = ({
           </SelectContent>
         </Select>
       )}
-      <Select
-        value={selectedFilterStatus}
-        onValueChange={onFilterStatusChange} // 🟢 SYNCHRONIZED DROPDOWN CHANGE
-      >
+      <Select value={selectedFilterStatus} onValueChange={onFilterStatusChange}>
         <SelectTrigger className="w-full bg-white">
           <SelectValue placeholder="All Statuses" />
         </SelectTrigger>
@@ -834,24 +835,16 @@ const TodayTasksTable = ({
   setSubmissionModalOpen,
   setSelectedSubmissionTask,
   canUpdate,
+  sortConfig,
+  onSort,
+  isLoading,
 }) => {
   const combinedTasks = [...(tasks || []), ...(upcomingRecurringTasks || [])];
-
-  // 1. Sorting State
-  const [sortConfig, setSortConfig] = useState({ key: null, direction: "asc" });
-
-  // 2. Click Handler (Toggle Ascending / Descending)
-  const handleSort = (columnKey) => {
-    let direction = "asc";
-    if (sortConfig.key === columnKey && sortConfig.direction === "asc") {
-      direction = "desc";
-    }
-    setSortConfig({ key: columnKey, direction });
-  };
+  const totalColumns = 15;
 
   // Helper for Sort Icons
   const getSortIcon = (columnKey) => {
-    if (sortConfig.key !== columnKey) {
+    if (sortConfig?.key !== columnKey) {
       return (
         <ArrowUpDown className="h-3.5 w-3.5 text-gray-400 opacity-60 ml-1" />
       );
@@ -863,35 +856,6 @@ const TodayTasksTable = ({
     );
   };
 
-  // 3. Frontend Sorting (Date + Status String Support)
-  const sortedTasks = useMemo(() => {
-    if (!sortConfig.key) return combinedTasks;
-
-    return [...combinedTasks].sort((a, b) => {
-      // 🟢 Agar status column par sort ho raha ho
-      if (sortConfig.key === "status") {
-        const valA = (a.status || "").toLowerCase();
-        const valB = (b.status || "").toLowerCase();
-
-        return sortConfig.direction === "asc"
-          ? valA.localeCompare(valB)
-          : valB.localeCompare(valA);
-      }
-
-      // 🟢 Date columns (startDate, dueDate) ke liye
-      const valA = a[sortConfig.key]
-        ? new Date(a[sortConfig.key]).getTime()
-        : 0;
-      const valB = b[sortConfig.key]
-        ? new Date(b[sortConfig.key]).getTime()
-        : 0;
-
-      if (valA < valB) return sortConfig.direction === "asc" ? -1 : 1;
-      if (valA > valB) return sortConfig.direction === "asc" ? 1 : -1;
-      return 0;
-    });
-  }, [combinedTasks, sortConfig]);
-
   return (
     <div className="overflow-x-auto border rounded-lg bg-white">
       <Table>
@@ -900,10 +864,10 @@ const TodayTasksTable = ({
             <TableHead>Sr. No.</TableHead>
             <TableHead>Task Id</TableHead>
 
-            {/* 🟢 Clickable Status Header with Sort */}
+            {/* Clickable Status Header with Server-Side Sort */}
             <TableHead
               className="cursor-pointer select-none hover:bg-gray-100 transition-colors"
-              onClick={() => handleSort("status")}
+              onClick={() => onSort("status")}
             >
               <div className="flex items-center">
                 <span>Status</span>
@@ -919,10 +883,10 @@ const TodayTasksTable = ({
             <TableHead>Type</TableHead>
             <TableHead>Attachment</TableHead>
 
-            {/* Clickable Start Date */}
+            {/* Clickable Start Date with Server-Side Sort */}
             <TableHead
               className="cursor-pointer select-none hover:bg-gray-100 transition-colors"
-              onClick={() => handleSort("startDate")}
+              onClick={() => onSort("startDate")}
             >
               <div className="flex items-center">
                 <span>Start Date & Time</span>
@@ -930,14 +894,25 @@ const TodayTasksTable = ({
               </div>
             </TableHead>
 
-            {/* Clickable Due Date */}
+            {/* Clickable Due Date with Server-Side Sort */}
             <TableHead
               className="cursor-pointer select-none hover:bg-gray-100 transition-colors"
-              onClick={() => handleSort("dueDate")}
+              onClick={() => onSort("dueDate")}
             >
               <div className="flex items-center">
                 <span>Due Date & Time</span>
                 {getSortIcon("dueDate")}
+              </div>
+            </TableHead>
+
+            {/* Clickable Completed At with Server-Side Sort */}
+            <TableHead
+              className="cursor-pointer select-none hover:bg-gray-100 transition-colors"
+              onClick={() => onSort("completedAt")}
+            >
+              <div className="flex items-center">
+                <span>Completed At</span>
+                {getSortIcon("completedAt")}
               </div>
             </TableHead>
 
@@ -947,8 +922,31 @@ const TodayTasksTable = ({
         </TableHeader>
 
         <TableBody>
-          {sortedTasks.length > 0 ? (
-            sortedTasks.map((task, index) => {
+          {isLoading ? (
+            Array.from({ length: Math.min(itemsPerPage, 2) }).map(
+              (_, rowIndex) => (
+                <TableRow key={`skeleton-row-${rowIndex}`}>
+                  {Array.from({ length: totalColumns }).map((__, colIndex) => (
+                    <TableCell
+                      key={`skeleton-cell-${rowIndex}-${colIndex}`}
+                      className="py-3"
+                    >
+                      <Skeleton.Input
+                        active
+                        size="small"
+                        style={{
+                          width:
+                            colIndex === 0 ? 32 : colIndex === 4 ? 160 : 90,
+                          height: 18,
+                        }}
+                      />
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ),
+            )
+          ) : combinedTasks.length > 0 ? (
+            combinedTasks.map((task, index) => {
               const assignedByUser = allUsers.find(
                 (u) => String(u._id) === String(task.assignedBy?._id),
               );
@@ -1198,6 +1196,16 @@ const TodayTasksTable = ({
                     <TableCell>
                       {task.dueDate ? formatDate(task.dueDate) : "-"}
                     </TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      {task.status === "Completed" &&
+                      (task.completedAt || task.updatedAt) ? (
+                        <span>
+                          {formatDate(task.completedAt || task.updatedAt)}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400">-</span>
+                      )}
+                    </TableCell>
                     <TableCell>{task.frequency ?? "-"}</TableCell>
                     <TableCell className="whitespace-nowrap">
                       {(() => {
@@ -1293,7 +1301,7 @@ const TodayTasksTable = ({
           ) : (
             <TableRow>
               <TableCell
-                colSpan={14}
+                colSpan={totalColumns}
                 className="text-center py-8 text-gray-500"
               >
                 No tasks found for this filter
@@ -1401,7 +1409,19 @@ const MyTask = () => {
   const [selectedFilterTaskType, setSelectedFilterTaskType] = useState("all");
   const [selectedFilterStatus, setSelectedFilterStatus] = useState("all");
 
-  // 🟢 BIDIRECTIONAL SYNCHRONIZATION: DROPDOWN SELECT -> STATS CARD HIGHLIGHT
+  // Server-side Sorting State
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: "asc" });
+
+  const handleSort = (columnKey) => {
+    let direction = "asc";
+    if (sortConfig.key === columnKey && sortConfig.direction === "asc") {
+      direction = "desc";
+    }
+    setSortConfig({ key: columnKey, direction });
+    setLocalCurrentPage(1);
+  };
+
+  // BIDIRECTIONAL SYNCHRONIZATION: DROPDOWN SELECT -> STATS CARD HIGHLIGHT
   const handleDropdownStatusChange = (val) => {
     setSelectedFilterStatus(val);
     setLocalCurrentPage(1);
@@ -1507,6 +1527,10 @@ const MyTask = () => {
           limit: localItemsPerPage,
           dateRange,
           search: debouncedSearch || undefined,
+          ...(sortConfig.key && {
+            sortBy: sortConfig.key,
+            sortOrder: sortConfig.direction,
+          }),
 
           filters: {
             stat: selectedStatFilter || null,
@@ -1547,6 +1571,7 @@ const MyTask = () => {
     dateRange,
     refetch,
     refreshUI,
+    sortConfig,
   ]);
 
   const handleExport = async () => {
@@ -1603,6 +1628,9 @@ const MyTask = () => {
           : "-",
         "Due Date": task?.dueDate
           ? new Date(task.dueDate).toLocaleDateString()
+          : "-", 
+           "Completed At": task?.completedAt
+          ? new Date(task.completedAt).toLocaleDateString()
           : "-",
         Delay: task?.delay || "-",
         "Created At": task?.createdAt
@@ -1628,7 +1656,7 @@ const MyTask = () => {
     }
   };
 
-  // 🟢 BIDIRECTIONAL SYNCHRONIZATION: STATS CARD CLICK -> DROPDOWN SELECTION
+  // BIDIRECTIONAL SYNCHRONIZATION: STATS CARD CLICK -> DROPDOWN SELECTION
   const handleStatClick = (statType) => {
     setSelectedStatFilter(statType);
     setLocalCurrentPage(1);
@@ -1673,6 +1701,10 @@ const MyTask = () => {
         page: localCurrentPage,
         limit: localItemsPerPage,
         search: debouncedSearch || undefined,
+        ...(sortConfig.key && {
+          sortBy: sortConfig.key,
+          sortOrder: sortConfig.direction,
+        }),
         filters: {
           stat: selectedStatFilter || null,
           taskCategory: selectedStatFilter
@@ -1753,6 +1785,10 @@ const MyTask = () => {
           page: localCurrentPage,
           limit: localItemsPerPage,
           search: debouncedSearch || undefined,
+          ...(sortConfig.key && {
+            sortBy: sortConfig.key,
+            sortOrder: sortConfig.direction,
+          }),
           filters: {
             stat: selectedStatFilter || null,
             taskCategory: selectedStatFilter
@@ -1895,6 +1931,8 @@ const MyTask = () => {
   if (status === "failed")
     return <div className="p-6 text-red-500">Error: {error}</div>;
 
+  const isTableLoading = status === "loading" || isFetching;
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 p-6">
       <div className="mx-auto">
@@ -1912,6 +1950,10 @@ const MyTask = () => {
                     page: localCurrentPage,
                     limit: localItemsPerPage,
                     search: debouncedSearch || undefined,
+                    ...(sortConfig.key && {
+                      sortBy: sortConfig.key,
+                      sortOrder: sortConfig.direction,
+                    }),
                     filters: {
                       stat: selectedStatFilter || null,
                       taskCategory: selectedStatFilter
@@ -1966,7 +2008,7 @@ const MyTask = () => {
                 selectedFilterTaskType={selectedFilterTaskType}
                 setSelectedFilterTaskType={setSelectedFilterTaskType}
                 selectedFilterStatus={selectedFilterStatus}
-                onFilterStatusChange={handleDropdownStatusChange} // 🟢 SYNCHRONIZED STATUS CHANGE
+                onFilterStatusChange={handleDropdownStatusChange}
                 showExport={true}
                 onExport={handleExport}
                 isExporting={isExporting}
@@ -1979,73 +2021,67 @@ const MyTask = () => {
 
               {/* DATA TABLE */}
               <div className="space-y-4">
-                {status === "loading" || isFetching ? (
-                  <div className="text-center py-10 flex flex-col items-center gap-2">
-                    <RefreshCcw className="animate-spin h-6 w-6 text-blue-500" />
-                    <p>Loading tasks...</p>
+                {/* Visual Indicator of Current Filter Mode */}
+                {selectedStatFilter === "total" && (
+                  <div className="text-sm font-bold text-blue-600 mb-2">
+                    Showing All Assigned Tasks
                   </div>
-                ) : (
-                  <>
-                    {/* Visual Indicator of Current Filter Mode */}
-                    {selectedStatFilter === "total" && (
-                      <div className="text-sm font-bold text-blue-600 mb-2">
-                        Showing All Assigned Tasks
-                      </div>
-                    )}
-                    {selectedStatFilter === "overdue" && (
-                      <div className="text-sm font-bold text-red-600 mb-2">
-                        Showing Overdue Pending Tasks
-                      </div>
-                    )}
-                    {selectedStatFilter === "pending" && (
-                      <div className="text-sm font-bold text-yellow-600 mb-2">
-                        Showing Pending Tasks
-                      </div>
-                    )}
-
-                    {searchTerm && (
-                      <div className="text-sm text-gray-600 mb-2">
-                        Searching for: "
-                        <span className="font-semibold">{searchTerm}</span>"
-                      </div>
-                    )}
-
-                    <TooltipProvider>
-                      <TodayTasksTable
-                        tasks={fetchedTasks}
-                        upcomingRecurringTasks={upcomingRecurringTasks}
-                        onEdit={handleEditClick}
-                        onChecklist={handleChecklistClick}
-                        onToggleComplete={handleToggleComplete}
-                        onDelete={handleDeleteClick}
-                        onViewDescription={(task) =>
-                          handleViewDescription(task.description)
-                        }
-                        currentPage={localCurrentPage}
-                        itemsPerPage={localItemsPerPage}
-                        allUsers={allUsers}
-                        handleCompleteClick={handleCompleteClick}
-                        setSelectedQueryTask={setSelectedQueryTask}
-                        setQueryDrawerOpen={setQueryDrawerOpen}
-                        setRaiseQueryModalOpen={setRaiseQueryModalOpen}
-                        unreadMap={unreadMap}
-                        setUnreadMap={setUnreadMap}
-                        setSubmissionModalOpen={setSubmissionModalOpen}
-                        setSelectedSubmissionTask={setSelectedSubmissionTask}
-                        canUpdate={canUpdate}
-                      />
-                    </TooltipProvider>
-
-                    <Pagination
-                      totalItems={totalTasks}
-                      itemsPerPage={localItemsPerPage}
-                      setItemsPerPage={setLocalItemsPerPage}
-                      currentPage={localCurrentPage}
-                      onPageChange={setLocalCurrentPage}
-                      isLoading={status === "loading"}
-                    />
-                  </>
                 )}
+                {selectedStatFilter === "overdue" && (
+                  <div className="text-sm font-bold text-red-600 mb-2">
+                    Showing Overdue Pending Tasks
+                  </div>
+                )}
+                {selectedStatFilter === "pending" && (
+                  <div className="text-sm font-bold text-yellow-600 mb-2">
+                    Showing Pending Tasks
+                  </div>
+                )}
+
+                {searchTerm && (
+                  <div className="text-sm text-gray-600 mb-2">
+                    Searching for: "
+                    <span className="font-semibold">{searchTerm}</span>"
+                  </div>
+                )}
+
+                <TooltipProvider>
+                  <TodayTasksTable
+                    tasks={fetchedTasks}
+                    upcomingRecurringTasks={upcomingRecurringTasks}
+                    onEdit={handleEditClick}
+                    onChecklist={handleChecklistClick}
+                    onToggleComplete={handleToggleComplete}
+                    onDelete={handleDeleteClick}
+                    onViewDescription={(task) =>
+                      handleViewDescription(task.description)
+                    }
+                    currentPage={localCurrentPage}
+                    itemsPerPage={localItemsPerPage}
+                    allUsers={allUsers}
+                    handleCompleteClick={handleCompleteClick}
+                    setSelectedQueryTask={setSelectedQueryTask}
+                    setQueryDrawerOpen={setQueryDrawerOpen}
+                    setRaiseQueryModalOpen={setRaiseQueryModalOpen}
+                    unreadMap={unreadMap}
+                    setUnreadMap={setUnreadMap}
+                    setSubmissionModalOpen={setSubmissionModalOpen}
+                    setSelectedSubmissionTask={setSelectedSubmissionTask}
+                    canUpdate={canUpdate}
+                    sortConfig={sortConfig}
+                    onSort={handleSort}
+                    isLoading={isTableLoading}
+                  />
+                </TooltipProvider>
+
+                <Pagination
+                  totalItems={totalTasks}
+                  itemsPerPage={localItemsPerPage}
+                  setItemsPerPage={setLocalItemsPerPage}
+                  currentPage={localCurrentPage}
+                  onPageChange={setLocalCurrentPage}
+                  isLoading={isTableLoading}
+                />
               </div>
             </Tabs>
           </CardContent>

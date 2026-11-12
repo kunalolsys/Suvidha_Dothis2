@@ -197,9 +197,6 @@ export const getMisReportTasks = async (req, res) => {
   try {
     const emp_code = req.query.emp_code || req.body.emp_code;
     const list = req.query.list || req.body.list;
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 50;
-    const skip = (page - 1) * limit;
 
     if (!emp_code || !list) {
       return res.status(400).json({
@@ -216,33 +213,24 @@ export const getMisReportTasks = async (req, res) => {
         success: false,
         message: "user does not exist",
         total: 0,
-        page,
-        limit,
         tasks: [],
       });
     }
 
-    const [total, tasks] = await Promise.all([
-      Task.countDocuments(filter),
-      Task.find(filter)
-        .populate("assignedTo", "name email employeeCode companyCode")
-        .populate("assignedBy", "name email")
-        .populate("departmentOfAssignToUser", "name")
-        .select(
-          "TaskId title description status dueDate plannedDueDate endDate completedAt startDate taskType checklist createdAt",
-        )
-        .sort({ dueDate: -1, createdAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .lean(),
-    ]);
+    const tasks = await Task.find(filter)
+      .populate("assignedTo", "name email employeeCode companyCode")
+      .populate("assignedBy", "name email")
+      .populate("departmentOfAssignToUser", "name")
+      .select(
+        "TaskId title description status dueDate plannedDueDate endDate completedAt startDate taskType checklist createdAt",
+      )
+      .sort({ dueDate: -1, createdAt: -1 })
+      .lean();
 
     return res.status(200).json({
       success: true,
       listType: list,
-      total,
-      page,
-      limit,
+      total: tasks.length,
       tasks,
     });
   } catch (error) {
