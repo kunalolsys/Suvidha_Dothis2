@@ -29,6 +29,9 @@ import {
   GitBranch,
   Clock,
   ChartColumnDecreasing,
+  CalendarClock,
+  ShieldCheck,
+  SlidersHorizontal,
 } from "lucide-react";
 import { useDispatch, useSelector } from "react-redux";
 import { setCurrentUser } from "../redux/slices/user/userSlice";
@@ -58,10 +61,13 @@ const Sidebar = ({ children }) => {
 
   // Auth User Cookies (Session Info Only)
   const roleCookie = useMemo(() => Cookies.get("role") || "", []);
-  const normalizedRole = useMemo(() => roleCookie.trim().toLowerCase(), [roleCookie]);
+  const normalizedRole = useMemo(
+    () => roleCookie.trim().toLowerCase(),
+    [roleCookie],
+  );
   const isSuper = useMemo(
     () => isSuperFromStore || normalizedRole.includes("super"),
-    [isSuperFromStore, normalizedRole]
+    [isSuperFromStore, normalizedRole],
   );
 
   const user = useMemo(
@@ -70,7 +76,7 @@ const Sidebar = ({ children }) => {
       role: { name: roleCookie },
       email: Cookies.get("email") || "",
     }),
-    [roleCookie]
+    [roleCookie],
   );
 
   // 2. RE-HYDRATION ON REFRESH
@@ -107,7 +113,7 @@ const Sidebar = ({ children }) => {
       }
       return Boolean(item.actions[action]);
     },
-    [isSuper, permissions]
+    [isSuper, permissions],
   );
 
   // Sync Current User & Company Data
@@ -121,7 +127,7 @@ const Sidebar = ({ children }) => {
           email: Cookies.get("email") || "",
           role: { name: Cookies.get("role") || "" },
           department: Cookies.get("departmentName"),
-        })
+        }),
       );
     }
     dispatch(fetchCompany());
@@ -135,7 +141,7 @@ const Sidebar = ({ children }) => {
         const res = await api.get("/setup/modules/list");
         const data = res.data?.data ?? res.data;
         if (isMounted) {
-          setModules(Array.isArray(data) ? data : data?.modules ?? []);
+          setModules(Array.isArray(data) ? data : (data?.modules ?? []));
         }
       } catch (e) {
         console.error("Failed to load modules list:", e);
@@ -167,12 +173,12 @@ const Sidebar = ({ children }) => {
       if (isSuper) return true;
       return modules.some((m) => m.moduleKey === moduleKey && m.isEnabled);
     },
-    [isSuper, modules]
+    [isSuper, modules],
   );
 
   const isBothDisable = useMemo(
     () => !isModuleEnabled("DO_THIS2") && !isModuleEnabled("FMS_ENGINE"),
-    [isModuleEnabled]
+    [isModuleEnabled],
   );
 
   // Dropdown Toggle
@@ -186,6 +192,7 @@ const Sidebar = ({ children }) => {
           reports: false,
           setup: false,
           delegate: false,
+          taskExtension: false,
           [menu]: true,
         });
         return;
@@ -197,10 +204,11 @@ const Sidebar = ({ children }) => {
         reports: false,
         setup: false,
         delegate: false,
+        taskExtension: false,
         [menu]: !prev[menu],
       }));
     },
-    [isCollapsed]
+    [isCollapsed],
   );
 
   // Logout Handler
@@ -216,38 +224,44 @@ const Sidebar = ({ children }) => {
   // Active Link Helpers
   const isActiveLink = useCallback(
     (path) => location.pathname === path,
-    [location.pathname]
+    [location.pathname],
   );
 
   const isDashboardDropdownActive = useMemo(
     () => location.pathname === "/dashboard",
-    [location.pathname]
+    [location.pathname],
   );
   const isMyBucketActive = useMemo(
     () => location.pathname === "/bucket/my-bucket",
-    [location.pathname]
+    [location.pathname],
   );
   const isMyDayDropdownActive = useMemo(
     () => location.pathname.startsWith("/my-day"),
-    [location.pathname]
+    [location.pathname],
   );
   const isFmsEngineDropdownActive = useMemo(
     () => location.pathname.startsWith("/fms-engine"),
-    [location.pathname]
+    [location.pathname],
   );
   const isReportsDropdownActive = useMemo(
     () => location.pathname.startsWith("/reports"),
-    [location.pathname]
+    [location.pathname],
   );
   const isDelegationDropdownActive = useMemo(
     () => location.pathname.startsWith("/delegate"),
-    [location.pathname]
+    [location.pathname],
   );
   const isSetupDropdownActive = useMemo(
     () => location.pathname.startsWith("/setup"),
-    [location.pathname]
+    [location.pathname],
   );
-
+  // Dropdown state me taskExtension add karein
+  const isTaskExtensionActive = useMemo(
+    () =>
+      location.pathname.startsWith("/task-extension-requests") ||
+      location.pathname.startsWith("/task-extension-master"),
+    [location.pathname],
+  );
   const sidebarWidth = isCollapsed ? "w-20" : "w-64";
 
   // Role View Label Resolution
@@ -287,7 +301,9 @@ const Sidebar = ({ children }) => {
     if (hasPermission("role_view", "read") && managerViewLabel) {
       baseLinks.push({
         path:
-          managerViewLabel === "Delegator View" ? "/my-day/delegator-view" : "/my-day/view",
+          managerViewLabel === "Delegator View"
+            ? "/my-day/delegator-view"
+            : "/my-day/view",
         label: managerViewLabel,
         icon: Eye,
       });
@@ -398,7 +414,10 @@ const Sidebar = ({ children }) => {
     if (hasPermission("users", "read")) {
       items.push({ path: "/setup/users", label: "Users", icon: Users2 });
     }
-    if (hasPermission("company_setup", "read") && isModuleEnabled("COMPANY_SETUP")) {
+    if (
+      hasPermission("company_setup", "read") &&
+      isModuleEnabled("COMPANY_SETUP")
+    ) {
       items.push({
         path: "/company-setup",
         label: "Company Setup",
@@ -627,10 +646,11 @@ const Sidebar = ({ children }) => {
           )}
 
           {/* 3. Delegation Task */}
-          {hasPermission("delegation_task", "read") && isModuleEnabled("DO_THIS2") && (
-            <Link
-              to="/delegation-tasks"
-              className={`
+          {hasPermission("delegation_task", "read") &&
+            isModuleEnabled("DO_THIS2") && (
+              <Link
+                to="/delegation-tasks"
+                className={`
                   relative flex items-center ${
                     isCollapsed ? "justify-center" : ""
                   } 
@@ -642,33 +662,182 @@ const Sidebar = ({ children }) => {
                       : "bg-white/80 text-gray-600 hover:bg-white border-gray-200/60 hover:border-gray-300/80 hover:shadow-lg"
                   }
                 `}
-            >
-              <div
-                className={`relative ${
-                  isActiveLink("/delegation-tasks")
-                    ? "text-white"
-                    : "text-gray-400 group-hover:text-blue-500"
-                }`}
               >
-                <ClipboardList className="w-4 h-4" />
-                {isActiveLink("/delegation-tasks") && (
-                  <div className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-green-400 rounded-full border border-white"></div>
+                <div
+                  className={`relative ${
+                    isActiveLink("/delegation-tasks")
+                      ? "text-white"
+                      : "text-gray-400 group-hover:text-blue-500"
+                  }`}
+                >
+                  <ClipboardList className="w-4 h-4" />
+                  {isActiveLink("/delegation-tasks") && (
+                    <div className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-green-400 rounded-full border border-white"></div>
+                  )}
+                </div>
+
+                {!isCollapsed && (
+                  <span className="ml-2 font-medium text-sm">
+                    Delegation Task
+                  </span>
                 )}
+              </Link>
+            )}
+          {/* 3.1 Regular Employee: Extendable Tasks (Sabhi ko dikhega jinko delegation_task permission hai) */}
+          {hasPermission("delegation_task", "read") &&
+            isModuleEnabled("DO_THIS2") && (
+              <Link
+                to="/extendable-tasks"
+                className={`
+                  relative flex items-center ${
+                    isCollapsed ? "justify-center" : ""
+                  } 
+                  rounded-xl px-3 py-2.5 transition-all duration-300 group
+                  backdrop-blur-sm border
+                  ${
+                    isActiveLink("/extendable-tasks")
+                      ? "bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/25 border-blue-400"
+                      : "bg-white/80 text-gray-600 hover:bg-white border-gray-200/60 hover:border-gray-300/80 hover:shadow-lg"
+                  }
+                `}
+              >
+                <div
+                  className={`relative ${
+                    isActiveLink("/extendable-tasks")
+                      ? "text-white"
+                      : "text-gray-400 group-hover:text-blue-500"
+                  }`}
+                >
+                  <CalendarClock className="w-4 h-4" />
+                  {isActiveLink("/extendable-tasks") && (
+                    <div className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-green-400 rounded-full border border-white"></div>
+                  )}
+                </div>
+
+                {!isCollapsed && (
+                  <span className="ml-2 font-medium text-sm">
+                    Extendable Tasks
+                  </span>
+                )}
+              </Link>
+            )}
+
+          {/* 3.2 Admin & Manager: Task Extensions Dropdown (Using existing normalizedRole & isSuper) */}
+          {(isSuper ||
+            normalizedRole.includes("admin") ||
+            normalizedRole.includes("manager") ||
+            normalizedRole.includes("owner")) &&
+            isModuleEnabled("DO_THIS2") && (
+              <div>
+                <div className="relative">
+                  <button
+                    onClick={() => toggleDropdown("taskExtension")}
+                    className={`
+                      relative flex items-center w-full ${
+                        isCollapsed ? "justify-center" : ""
+                      } 
+                      rounded-xl px-3 py-2.5 transition-all duration-300 group
+                      backdrop-blur-sm border cursor-pointer
+                      ${
+                        isTaskExtensionActive
+                          ? "bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/25 border-blue-400"
+                          : "bg-white/80 text-gray-600 hover:bg-white border-gray-200/60 hover:border-gray-300/80 hover:shadow-lg"
+                      }
+                    `}
+                  >
+                    <div
+                      className={`relative ${
+                        isTaskExtensionActive
+                          ? "text-white"
+                          : "text-gray-400 group-hover:text-blue-500"
+                      }`}
+                    >
+                      <CalendarClock className="w-4 h-4" />
+                    </div>
+
+                    {!isCollapsed && (
+                      <span className="ml-2 font-medium flex-1 text-left text-sm">
+                        Task Extensions
+                      </span>
+                    )}
+
+                    {!isCollapsed && (
+                      <ChevronDown
+                        className={`w-3 h-3 transition-transform duration-300 ${
+                          openDropdowns.taskExtension || isTaskExtensionActive
+                            ? "rotate-180"
+                            : ""
+                        } ${
+                          isTaskExtensionActive
+                            ? "text-white/80"
+                            : "text-gray-400"
+                        }`}
+                      />
+                    )}
+                  </button>
+
+                  {/* Submenu Links */}
+                  {(openDropdowns.taskExtension || isTaskExtensionActive) &&
+                    !isCollapsed && (
+                      <div className="ml-3 mt-1.5 space-y-1 pl-4 border-l-2 border-gray-200/40">
+                        {/* Submenu 1: Approvals (Admin & Managers) */}
+                        <Link
+                          to="/task-extension-requests"
+                          className={`
+                            flex items-center rounded-lg px-2 py-2 text-sm transition-all duration-200 group
+                            ${
+                              isActiveLink("/task-extension-requests")
+                                ? "text-blue-600 bg-blue-50/80 border border-blue-200/60 font-medium"
+                                : "text-gray-500 hover:text-gray-900 hover:bg-gray-50/80"
+                            }
+                          `}
+                        >
+                          <ShieldCheck
+                            className={`w-3.5 h-3.5 mr-2 ${
+                              isActiveLink("/task-extension-requests")
+                                ? "text-blue-500"
+                                : "text-gray-400 group-hover:text-gray-600"
+                            }`}
+                          />
+                          Extension Approvals
+                        </Link>
+
+                        {/* Submenu 2: Master Rules (Strictly Admin / Super / Owner) */}
+                        {(isSuper ||
+                          normalizedRole.includes("admin") ||
+                          normalizedRole.includes("owner")) && (
+                          <Link
+                            to="/task-extension-master"
+                            className={`
+                              flex items-center rounded-lg px-2 py-2 text-sm transition-all duration-200 group
+                              ${
+                                isActiveLink("/task-extension-master")
+                                  ? "text-blue-600 bg-blue-50/80 border border-blue-200/60 font-medium"
+                                  : "text-gray-500 hover:text-gray-900 hover:bg-gray-50/80"
+                              }
+                            `}
+                          >
+                            <SlidersHorizontal
+                              className={`w-3.5 h-3.5 mr-2 ${
+                                isActiveLink("/task-extension-master")
+                                  ? "text-blue-500"
+                                  : "text-gray-400 group-hover:text-gray-600"
+                              }`}
+                            />
+                            Extension Master
+                          </Link>
+                        )}
+                      </div>
+                    )}
+                </div>
               </div>
-
-              {!isCollapsed && (
-                <span className="ml-2 font-medium text-sm">
-                  Delegation Task
-                </span>
-              )}
-            </Link>
-          )}
-
+            )}
           {/* 4. Task Reassignment */}
-          {hasPermission("task_reassigning", "read") && isModuleEnabled("DO_THIS2") && (
-            <Link
-              to="/reassign"
-              className={`
+          {hasPermission("task_reassigning", "read") &&
+            isModuleEnabled("DO_THIS2") && (
+              <Link
+                to="/reassign"
+                className={`
                   relative flex items-center ${
                     isCollapsed ? "justify-center" : ""
                   } 
@@ -680,27 +849,27 @@ const Sidebar = ({ children }) => {
                       : "bg-white/80 text-gray-600 hover:bg-white border-gray-200/60 hover:border-gray-300/80 hover:shadow-lg"
                   }
                 `}
-            >
-              <div
-                className={`relative ${
-                  isActiveLink("/reassign")
-                    ? "text-white"
-                    : "text-gray-400 group-hover:text-blue-500"
-                }`}
               >
-                <UserSwitchOutlined className="w-4 h-4" />
-                {isActiveLink("/reassign") && (
-                  <div className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-green-400 rounded-full border border-white"></div>
-                )}
-              </div>
+                <div
+                  className={`relative ${
+                    isActiveLink("/reassign")
+                      ? "text-white"
+                      : "text-gray-400 group-hover:text-blue-500"
+                  }`}
+                >
+                  <UserSwitchOutlined className="w-4 h-4" />
+                  {isActiveLink("/reassign") && (
+                    <div className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-green-400 rounded-full border border-white"></div>
+                  )}
+                </div>
 
-              {!isCollapsed && (
-                <span className="ml-2 font-medium text-sm">
-                  Task Reassignment
-                </span>
-              )}
-            </Link>
-          )}
+                {!isCollapsed && (
+                  <span className="ml-2 font-medium text-sm">
+                    Task Reassignment
+                  </span>
+                )}
+              </Link>
+            )}
 
           {/* 5. FMS Engine */}
           {fmsEngineLinks.length > 0 && isModuleEnabled("FMS_ENGINE") && (
@@ -857,12 +1026,13 @@ const Sidebar = ({ children }) => {
           )}
 
           {/* 7. My Bucket */}
-          {hasPermission("my_bucket", "read") && isModuleEnabled("DO_THIS2") && (
-            <div>
-              <div className="relative">
-                <Link
-                  to="/bucket/my-bucket"
-                  className={`
+          {hasPermission("my_bucket", "read") &&
+            isModuleEnabled("DO_THIS2") && (
+              <div>
+                <div className="relative">
+                  <Link
+                    to="/bucket/my-bucket"
+                    className={`
                     relative flex items-center w-full ${
                       isCollapsed ? "justify-center" : ""
                     } 
@@ -874,29 +1044,29 @@ const Sidebar = ({ children }) => {
                         : "bg-white/80 text-gray-600 hover:bg-white border-gray-200/60 hover:border-gray-300/80 hover:shadow-lg"
                     }
                   `}
-                >
-                  <div
-                    className={`relative ${
-                      isMyBucketActive
-                        ? "text-white"
-                        : "text-gray-400 group-hover:text-blue-500"
-                    }`}
                   >
-                    <LayoutDashboard className="w-4 h-4" />
-                    {isMyBucketActive && (
-                      <div className="absolute inset-0 bg-white/20 rounded-full animate-ping"></div>
-                    )}
-                  </div>
+                    <div
+                      className={`relative ${
+                        isMyBucketActive
+                          ? "text-white"
+                          : "text-gray-400 group-hover:text-blue-500"
+                      }`}
+                    >
+                      <LayoutDashboard className="w-4 h-4" />
+                      {isMyBucketActive && (
+                        <div className="absolute inset-0 bg-white/20 rounded-full animate-ping"></div>
+                      )}
+                    </div>
 
-                  {!isCollapsed && (
-                    <span className="ml-2 font-medium flex-1 text-left text-sm">
-                      My Bucket
-                    </span>
-                  )}
-                </Link>
+                    {!isCollapsed && (
+                      <span className="ml-2 font-medium flex-1 text-left text-sm">
+                        My Bucket
+                      </span>
+                    )}
+                  </Link>
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
           {/* 8. Delegation Buckets */}
           {delegationBucketLinks.length > 0 && isModuleEnabled("DO_THIS2") && (

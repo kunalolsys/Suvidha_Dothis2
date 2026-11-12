@@ -68,6 +68,9 @@ import FloatingManualButton from "./components/FloatingManualButton";
 import SuperModuleSettings from "./pages/SuperModuleSettings";
 import CompanyProfile from "./pages/CompanyProfile";
 import NotificationIntegrations from "./pages/Notificationintegrations";
+import AdminExtensionMaster from "./components/AdminExtensionMaster";
+import AdminExtensionApprovals from "./components/AdminExtensionApprovals";
+import UserExtendTasksList from "./components/UserExtendTasksList";
 
 function App() {
   const [isSessionTimeoutModalOpen, setIsSessionTimeoutModalOpen] =
@@ -124,7 +127,35 @@ function App() {
                 />
                 <Route path="/profile" element={<Profile />} />
                 <Route path="/logs" element={<LogsDashboard />} />
+                {/* 1. Employee View: Extendable Task List */}
+                <Route
+                  path="/extendable-tasks"
+                  element={
+                    <PermissionRoute requiredPermission="delegated_recurring">
+                      <UserExtendTasksList />
+                    </PermissionRoute>
+                  }
+                />
 
+                {/* 2. Admin & Reporting Manager: Extension Approvals Queue */}
+                <Route
+                  path="/task-extension-requests"
+                  element={
+                    <PermissionRoute requiredPermission="delegated_recurring">
+                      <AdminExtensionApprovals />
+                    </PermissionRoute>
+                  }
+                />
+
+                {/* 3. Admin View: Extension Master Rules Configuration */}
+                <Route
+                  path="/task-extension-master"
+                  element={
+                    <PermissionRoute requiredPermission="delegated_recurring">
+                      <AdminExtensionMaster />
+                    </PermissionRoute>
+                  }
+                />
                 {/* 2. My Day Submodules */}
                 <Route
                   path="/my-day/mytasks"

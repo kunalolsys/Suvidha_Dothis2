@@ -6,13 +6,23 @@ export const fetchTasks = createAsyncThunk(
   "tasks/fetchTasks",
   async (params = {}, { rejectWithValue }) => {
     try {
-      const { userId, search, status, page = 1, limit = 10, type } = params;
+      const {
+        userId,
+        search,
+        status,
+        page = 1,
+        limit = 10,
+        type,
+        frequency,
+      } = params;
       const queryParams = new URLSearchParams();
 
       if (userId && userId !== "all") queryParams.append("userId", userId);
       if (search) queryParams.append("search", search);
       if (status && status !== "all") queryParams.append("status", status);
       if (type) queryParams.append("type", type);
+      if (frequency && frequency !== "all")
+        queryParams.append("frequency", frequency);
       queryParams.append("page", page);
       queryParams.append("limit", limit);
 

@@ -198,6 +198,8 @@ const TaskTable = ({
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedFilterUser, setSelectedFilterUser] = useState("all");
   const [selectedFilterStatus, setSelectedFilterStatus] = useState("all");
+  const [selectedFilterFreq, setSelectedFilterFreq] = useState("all");
+
   const [activeTabForExport, setActiveTabForExport] = useState("one-time");
 
   // Backend Pagination States
@@ -214,6 +216,7 @@ const TaskTable = ({
       search: debouncedSearch,
       userId: selectedFilterUser,
       status: selectedFilterStatus,
+      frequency: selectedFilterFreq,
       type:
         activeTabForExport === "one-time" ? "DelegationTask" : "RecurringTask",
     });
@@ -221,6 +224,7 @@ const TaskTable = ({
     debouncedSearch,
     selectedFilterUser,
     selectedFilterStatus,
+    selectedFilterFreq,
     currentPage,
     itemsPerPage,
     activeTabForExport,
@@ -1373,7 +1377,33 @@ const TaskTable = ({
                 <SelectItem value="delayed">Delayed</SelectItem>
               </SelectContent>
             </Select>
-
+            {activeTabForExport != "one-time" && (
+              <Select
+                value={selectedFilterFreq}
+                onValueChange={(val) => {
+                  setSelectedFilterFreq(val);
+                  setCurrentPage(1);
+                }}
+              >
+                <SelectTrigger className="w-full md:w-[180px]">
+                  <SelectValue placeholder="Filter by Frequency" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">
+                    <ListTodo className="w-4 h-4 mr-2 opacity-50" />
+                    All Frequencies
+                  </SelectItem>
+                  <SelectItem value="Daily">Daily</SelectItem>
+                  <SelectItem value="Weekly">Weekly</SelectItem>
+                  <SelectItem value="Bi-weekly">Bi-weekly</SelectItem>
+                  <SelectItem value="Fortnightly">Fortnightly</SelectItem>
+                  <SelectItem value="Monthly">Monthly</SelectItem>
+                  <SelectItem value="Quarterly">Quarterly</SelectItem>
+                  <SelectItem value="Half Yearly">Half Yearly</SelectItem>
+                  <SelectItem value="Yearly">Yearly</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
             {/* Column Visibility Menus */}
             {activeTabForExport === "one-time" ? (
               <Dropdown

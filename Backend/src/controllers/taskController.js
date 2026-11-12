@@ -3647,6 +3647,7 @@ export const getAllTasks = handleAsync(async (req, res, next) => {
     limit = 10,
     taskCategory,
     type, // "DelegationTask" ya "RecurringTask"
+    frequency,
   } = req.query;
 
   const skip = (parseInt(page) - 1) * parseInt(limit);
@@ -3668,7 +3669,9 @@ export const getAllTasks = handleAsync(async (req, res, next) => {
   if (!isSuperUser) {
     filterQuery.createdBy = loggedInUserId;
   }
-
+  if (frequency) {
+    filterQuery.frequency = frequency;
+  }
   // --- TAB KE HISAB SE ALAG PAGINATION AUR FILTER (FIX) ---
   if (type) {
     if (type === "DelegationTask") {
@@ -3768,8 +3771,12 @@ export const getAllTasks = handleAsync(async (req, res, next) => {
   let finalQuery = filterQuery;
 
   if (search) {
+    const trimmedSearch = search.trim();
     const searchQuery = {
-      $or: [{ title: { $regex: search, $options: "i" } }, { TaskId: search }],
+      $or: [
+        { title: { $regex: trimmedSearch, $options: "i" } },
+        { TaskId: { $regex: trimmedSearch, $options: "i" } }, // 🟢 Partial match fix
+      ],
     };
 
     finalQuery = { $and: [filterQuery, searchQuery] };
