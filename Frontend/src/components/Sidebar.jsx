@@ -684,7 +684,7 @@ const Sidebar = ({ children }) => {
               </Link>
             )}
           {/* 3.1 Regular Employee: Extendable Tasks (Sabhi ko dikhega jinko delegation_task permission hai) */}
-          {/* {hasPermission("delegation_task", "read") &&
+          {hasPermission("extendable_tasks", "read") &&
             isModuleEnabled("DO_THIS2") && (
               <Link
                 to="/extendable-tasks"
@@ -720,13 +720,12 @@ const Sidebar = ({ children }) => {
                   </span>
                 )}
               </Link>
-            )} */}
+            )}
 
           {/* 3.2 Admin & Manager: Task Extensions Dropdown (Using existing normalizedRole & isSuper) */}
-          {/* {(isSuper ||
-            normalizedRole.includes("admin") ||
-            normalizedRole.includes("manager") ||
-            normalizedRole.includes("owner")) &&
+          {/* 3.2 Admin & Manager: Task Extensions Dropdown (Permission-based) */}
+          {(hasPermission("extension_approvals", "read") ||
+            hasPermission("extension_master", "read")) &&
             isModuleEnabled("DO_THIS2") && (
               <div>
                 <div className="relative">
@@ -776,34 +775,33 @@ const Sidebar = ({ children }) => {
                     )}
                   </button>
 
-
                   {(openDropdowns.taskExtension || isTaskExtensionActive) &&
                     !isCollapsed && (
                       <div className="ml-3 mt-1.5 space-y-1 pl-4 border-l-2 border-gray-200/40">
-                        <Link
-                          to="/task-extension-requests"
-                          className={`
-                            flex items-center rounded-lg px-2 py-2 text-sm transition-all duration-200 group
-                            ${
-                              isActiveLink("/task-extension-requests")
-                                ? "text-blue-600 bg-blue-50/80 border border-blue-200/60 font-medium"
-                                : "text-gray-500 hover:text-gray-900 hover:bg-gray-50/80"
-                            }
-                          `}
-                        >
-                          <ShieldCheck
-                            className={`w-3.5 h-3.5 mr-2 ${
-                              isActiveLink("/task-extension-requests")
-                                ? "text-blue-500"
-                                : "text-gray-400 group-hover:text-gray-600"
-                            }`}
-                          />
-                          Extension Approvals
-                        </Link>
+                        {hasPermission("extension_approvals", "read") && (
+                          <Link
+                            to="/task-extension-requests"
+                            className={`
+                              flex items-center rounded-lg px-2 py-2 text-sm transition-all duration-200 group
+                              ${
+                                isActiveLink("/task-extension-requests")
+                                  ? "text-blue-600 bg-blue-50/80 border border-blue-200/60 font-medium"
+                                  : "text-gray-500 hover:text-gray-900 hover:bg-gray-50/80"
+                              }
+                            `}
+                          >
+                            <ShieldCheck
+                              className={`w-3.5 h-3.5 mr-2 ${
+                                isActiveLink("/task-extension-requests")
+                                  ? "text-blue-500"
+                                  : "text-gray-400 group-hover:text-gray-600"
+                              }`}
+                            />
+                            Extension Approvals
+                          </Link>
+                        )}
 
-                        {(isSuper ||
-                          normalizedRole.includes("admin") ||
-                          normalizedRole.includes("owner")) && (
+                        {hasPermission("extension_master", "read") && (
                           <Link
                             to="/task-extension-master"
                             className={`
@@ -829,7 +827,7 @@ const Sidebar = ({ children }) => {
                     )}
                 </div>
               </div>
-            )} */}
+            )}
           {/* 4. Task Reassignment */}
           {hasPermission("task_reassigning", "read") &&
             isModuleEnabled("DO_THIS2") && (

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import {
+  exportRoleBasedTasksThunk,
   fetchMyTasks,
   fetchTaskCounts,
   getFilterTasks,
@@ -93,7 +94,7 @@ import { Label } from "../../components/ui/index.jsx";
 import dayjs from "dayjs";
 import TaskChat from "../../components/TaskChat.jsx";
 import { useSocket } from "../../context/SocketContext.jsx";
-import { Popover, Select as AntdSelect } from "antd";
+import { Popover, Select as AntdSelect, message } from "antd";
 
 // --- Helper Components ---
 
@@ -952,39 +953,39 @@ const PCView = () => {
   };
 
   const handleExport = async () => {
-    setIsExporting(true);
     try {
-      const dataToExport = fetchedTasks.map((task, index) => ({
-        "Sr. No.": (localCurrentPage - 1) * localItemsPerPage + index + 1,
-        "Task ID": task.TaskId || "-",
-        "Task Title": task.title || "-",
-        "Assigned To": task.assignedTo?.name || "-",
-        Description: task.description || "-",
-        Type: task.taskType || "-",
-        Attachment: task.attachmentFile ? "Yes" : "No",
-        "Start Date": task.startDate
-          ? new Date(task.startDate).toLocaleDateString()
-          : "-",
-        "Due Date": task.dueDate
-          ? new Date(task.dueDate).toLocaleDateString()
-          : "-",
-        Status: task.status || "-",
-      }));
+      setIsExporting(true);
 
-      if (dataToExport.length === 0) {
-        toast.warning("No data to export");
-        return;
-      }
+      await dispatch(
+        exportRoleBasedTasksThunk({
+          userId: currentUser._id,
+          role: currentUser.role?.name,
+          departmentId: departmentId,
+          selectedDoer: selectedDoer || null,
+          selectedManager: selectedManager || null,
+          selectedSrManager: selectedSrManager || null,
+          search: debouncedSearch || searchTerm || "",
+          taskTypeFilter: engineViewTab,
+          filters: {
+            stat: selectedStatFilter || null,
+            taskCategory: selectedStatFilter
+              ? null
+              : activeTab === "today"
+                ? "today_backlog"
+                : activeTab === "upcoming"
+                  ? "upcoming"
+                  : activeTab === "completed"
+                    ? "completed"
+                    : null,
+            status:
+              selectedFilterStatus === "all" ? null : selectedFilterStatus,
+          },
+        }),
+      ).unwrap();
 
-      const ws = XLSX.utils.json_to_sheet(dataToExport);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "ManagerTasks");
-      const timestamp = new Date().toISOString().split("T")[0];
-      XLSX.writeFile(wb, `ManagerTasks_${timestamp}.xlsx`);
-      toast.success("Export completed successfully");
-    } catch (error) {
-      console.error("Export error:", error);
-      toast.error("Failed to export data");
+      message.success("Tasks exported successfully!");
+    } catch (err) {
+      message.error("Failed to export tasks");
     } finally {
       setIsExporting(false);
     }

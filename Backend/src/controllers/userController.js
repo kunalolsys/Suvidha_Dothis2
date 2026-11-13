@@ -1085,3 +1085,66 @@ export const updateUsersCSV = handleAsync(async (req, res, next) => {
     message: `Update complete: ${updatedUsers.length} user(s) update hue, ${skippedRows.length} skip hue, ${errorRows.length} fail hue.`,
   });
 });
+export const checkEmployeeStatus = async (req, res) => {
+  try {
+    const rawCode =
+      req.query.emp_code ||
+      req.query.employeeCode ||
+      req.body?.emp_code ||
+      req.body?.employeeCode;
+
+    // 🟢 If employeeCode is not provided, return all active users
+    if (!rawCode || !String(rawCode).trim()) {
+      const activeUsers = await User.find({
+        isActive: true,
+        isDeleted: { $ne: true },
+      })
+        .select("name email employeeCode companyCode isActive")
+        .sort({ name: 1 })
+        .lean();
+
+      return res.status(200).json({
+        success: true,
+        total: activeUsers.length,
+        users: activeUsers,
+      });
+    }
+
+    const cleanCode = String(rawCode).trim();
+    const escapedCode = cleanCode.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+    const user = await User.findOne({
+      employeeCode: { $regex: `^${escapedCode}$`, $options: "i" },
+      isDeleted: { $ne: true },
+    })
+      .select("name email employeeCode companyCode isActive")
+      .lean();
+
+    if (!user) {
+      return res.status(200).json({
+        success: false,
+        exists: false,
+        isActive: false,
+        message: "User does not exist.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      exists: true,
+      isActive: Boolean(user.isActive),
+      message: user.isActive ? "User is active." : "User is inactive.",
+      users: {
+        name: user.name,
+        email: user.email,
+        employeeCode: user.employeeCode,
+        companyCode: user.companyCode,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};

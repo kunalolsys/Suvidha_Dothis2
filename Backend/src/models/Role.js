@@ -26,6 +26,19 @@ export const SYSTEM_MODULES = [
     label: "Delegation Task",
     submodules: [{ key: "delegation_task", label: "Delegation Task Main" }],
   },
+  {
+    key: "extendable_tasks",
+    label: "Extendable Tasks",
+    submodules: [{ key: "extendable_tasks", label: "Extendable Tasks" }],
+  },
+  {
+    key: "task_extension",
+    label: "Task Extension",
+    submodules: [
+      { key: "extension_approvals", label: "Extension Approvals" },
+      { key: "extension_master", label: "Extension Master" },
+    ],
+  },
   // 4. Task Reassignment
   {
     key: "task_reassigning",

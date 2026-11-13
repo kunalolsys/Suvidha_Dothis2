@@ -131,7 +131,7 @@ function App() {
                 <Route
                   path="/extendable-tasks"
                   element={
-                    <PermissionRoute requiredPermission="delegated_recurring">
+                    <PermissionRoute requiredPermission="extendable_tasks">
                       <UserExtendTasksList />
                     </PermissionRoute>
                   }
@@ -141,7 +141,7 @@ function App() {
                 <Route
                   path="/task-extension-requests"
                   element={
-                    <PermissionRoute requiredPermission="delegated_recurring">
+                    <PermissionRoute requiredPermission="extension_approvals">
                       <AdminExtensionApprovals />
                     </PermissionRoute>
                   }
@@ -151,7 +151,7 @@ function App() {
                 <Route
                   path="/task-extension-master"
                   element={
-                    <PermissionRoute requiredPermission="delegated_recurring">
+                    <PermissionRoute requiredPermission="extension_master">
                       <AdminExtensionMaster />
                     </PermissionRoute>
                   }

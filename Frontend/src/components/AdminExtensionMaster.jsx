@@ -6,20 +6,29 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import api from "../lib/api";
+import { useSelector } from "react-redux";
+import { getSubmodulePermissions } from "../utils/permissionUtils";
 
 const AdminExtensionMaster = () => {
   const [daysBeforeDueDate, setDaysBeforeDueDate] = useState(2);
-  const [maxExtensionDays, setMaxExtensionDays] = useState(3);
+  // const [maxExtensionDays, setMaxExtensionDays] = useState(3);
   const [loading, setLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const { permissions, isSuper } = useSelector((state) => state.permissions);
 
+  // Destructure clean capability flags
+  const { canRead, canUpdate } = getSubmodulePermissions(
+    permissions,
+    "extension_master",
+    isSuper,
+  );
   const fetchMaster = async () => {
     setLoading(true);
     try {
       const res = await api.get("/task-extension/master");
       if (res.data?.data) {
         setDaysBeforeDueDate(res.data.data.daysBeforeDueDate);
-        setMaxExtensionDays(res.data.data.maxExtensionDays);
+        // setMaxExtensionDays(res.data.data.maxExtensionDays);
       }
     } catch (err) {
       toast.error("Failed to fetch master configuration");
@@ -33,7 +42,7 @@ const AdminExtensionMaster = () => {
   }, []);
 
   const handleSave = async () => {
-    if (daysBeforeDueDate < 1 || maxExtensionDays < 1) {
+    if (daysBeforeDueDate < 1 /* || maxExtensionDays < 1 */) {
       toast.error("Values must be at least 1 day.");
       return;
     }
@@ -42,7 +51,7 @@ const AdminExtensionMaster = () => {
     try {
       await api.post("/task-extension/master", {
         daysBeforeDueDate: Number(daysBeforeDueDate),
-        maxExtensionDays: Number(maxExtensionDays),
+        // maxExtensionDays: Number(maxExtensionDays),
       });
       toast.success("Task Extension Master rules updated successfully!");
     } catch (err) {
@@ -101,7 +110,7 @@ const AdminExtensionMaster = () => {
                 </span>
               </div>
 
-              <div>
+              {/* <div>
                 <Label className="text-xs font-semibold text-gray-700 block mb-1.5">
                   Maximum Allowable Extension Days
                 </Label>
@@ -116,16 +125,18 @@ const AdminExtensionMaster = () => {
                   Employee ek request mein maximum itne dino tak ki extension
                   maang sakta hai.
                 </span>
-              </div>
+              </div> */}
 
-              <Button
-                onClick={handleSave}
-                disabled={isSaving || loading}
-                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold h-10 rounded-lg mt-2"
-              >
-                <Save className="w-4 h-4 mr-1.5" />
-                {isSaving ? "Saving Settings..." : "Save Master Settings"}
-              </Button>
+              {canUpdate && (
+                <Button
+                  onClick={handleSave}
+                  disabled={isSaving || loading}
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold h-10 rounded-lg mt-2"
+                >
+                  <Save className="w-4 h-4 mr-1.5" />
+                  {isSaving ? "Saving Settings..." : "Save Master Settings"}
+                </Button>
+              )}
             </CardContent>
           </Card>
         </div>

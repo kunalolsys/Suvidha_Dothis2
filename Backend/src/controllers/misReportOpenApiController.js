@@ -227,11 +227,32 @@ export const getMisReportTasks = async (req, res) => {
       .sort({ dueDate: -1, createdAt: -1 })
       .lean();
 
+    const formatDate = (dateVal) => {
+      if (!dateVal) return null;
+      const d = new Date(dateVal);
+      if (isNaN(d.getTime())) return null;
+      return d.toLocaleDateString("en-GB", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      }); // Output: "13 Nov 2026"
+    };
+
+    const formattedTasks = tasks.map((task) => ({
+      ...task,
+      startDate: formatDate(task.startDate),
+      dueDate: formatDate(task.dueDate),
+      plannedDueDate: formatDate(task.plannedDueDate),
+      endDate: formatDate(task.endDate),
+      completedAt: formatDate(task.completedAt),
+      createdAt: formatDate(task.createdAt),
+    }));
+
     return res.status(200).json({
       success: true,
       listType: list,
-      total: tasks.length,
-      tasks,
+      total: formattedTasks.length,
+      tasks: formattedTasks,
     });
   } catch (error) {
     return res.status(500).json({

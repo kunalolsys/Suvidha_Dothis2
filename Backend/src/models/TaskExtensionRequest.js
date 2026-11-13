@@ -25,6 +25,11 @@ const taskExtensionRequestSchema = new mongoose.Schema(
       required: true,
       min: 1,
     },
+    approvedExtensionDays: {
+      type: Number,
+      min: 1,
+      default: null,
+    },
     reason: {
       type: String,
       trim: true,

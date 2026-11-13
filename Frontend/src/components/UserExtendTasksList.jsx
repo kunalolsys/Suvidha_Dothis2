@@ -39,15 +39,24 @@ import {
   TooltipTrigger,
 } from "../components/ui/tooltip"; // Ya "../components/ui/tooltip"
 import { CalendarPlus } from "lucide-react";
+import { useSelector } from "react-redux";
+import { getSubmodulePermissions } from "../utils/permissionUtils";
 const UserExtendTasksList = () => {
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [masterConfig, setMasterConfig] = useState({
     daysBeforeDueDate: 2,
-    maxExtensionDays: 3,
+    // maxExtensionDays: 3,
   });
+  const { permissions, isSuper } = useSelector((state) => state.permissions);
 
+  // Destructure clean capability flags
+  const { canRead, canUpdate } = getSubmodulePermissions(
+    permissions,
+    "extendable_tasks",
+    isSuper,
+  );
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState(null);
@@ -85,12 +94,12 @@ const UserExtendTasksList = () => {
 
   const handleRequestSubmit = async () => {
     if (!selectedTask) return;
-    if (extensionDays < 1 || extensionDays > masterConfig.maxExtensionDays) {
-      toast.error(
-        `Extension days 1 se ${masterConfig.maxExtensionDays} ke beech hone chahiye.`,
-      );
-      return;
-    }
+    // if (extensionDays < 1 || extensionDays > masterConfig.maxExtensionDays) {
+    //   toast.error(
+    //     `Extension days 1 se ${masterConfig.maxExtensionDays} ke beech hone chahiye.`,
+    //   );
+    //   return;
+    // }
 
     setIsSubmitting(true);
     try {
@@ -232,9 +241,11 @@ const UserExtendTasksList = () => {
                   <TableHead>Task Title</TableHead>
                   <TableHead>Description</TableHead>
                   <TableHead>Current Due Date</TableHead>
-                  <TableHead>Allowed Window</TableHead>
+                  {/* <TableHead>Allowed Window</TableHead> */}
                   <TableHead>Status</TableHead>
-                  <TableHead className="text-center">Action</TableHead>
+                  {canUpdate && (
+                    <TableHead className="text-center">Action</TableHead>
+                  )}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -271,11 +282,11 @@ const UserExtendTasksList = () => {
                           ? moment(task.dueDate).format("DD MMM YYYY, hh:mm A")
                           : "-"}
                       </TableCell>
-                      <TableCell>
+                      {/* <TableCell>
                         <span className="text-[11px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md border font-medium">
                           Max +{masterConfig.maxExtensionDays} Days
                         </span>
-                      </TableCell>
+                      </TableCell> */}
                       <TableCell>
                         <Badge
                           variant="outline"
@@ -284,49 +295,53 @@ const UserExtendTasksList = () => {
                           {task.status}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-center">
-                        <TooltipProvider delayDuration={150}>
-                          <div className="flex items-center justify-center">
-                            {task.hasPendingRequest ? (
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <div className="inline-flex items-center justify-center h-8 w-8 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 cursor-default">
-                                    <Clock className="h-4 w-4 text-amber-600 animate-pulse" />
-                                  </div>
-                                </TooltipTrigger>
-                                <TooltipContent side="top">
-                                  <p className="text-xs">
-                                    Pending Approval (+
-                                    {
-                                      task.pendingDetails
-                                        ?.requestedExtensionDays
-                                    }{" "}
-                                    Days)
-                                  </p>
-                                </TooltipContent>
-                              </Tooltip>
-                            ) : (
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8 text-blue-600 bg-blue-50 hover:bg-blue-100 hover:text-blue-700 rounded-lg cursor-pointer transition-all duration-200"
-                                    onClick={() => handleOpenExtendModal(task)}
-                                  >
-                                    <CalendarPlus className="h-4 w-4" />
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent side="top">
-                                  <p className="text-xs">
-                                    Request Date Extension
-                                  </p>
-                                </TooltipContent>
-                              </Tooltip>
-                            )}
-                          </div>
-                        </TooltipProvider>
-                      </TableCell>
+                      {canUpdate && (
+                        <TableCell className="text-center">
+                          <TooltipProvider delayDuration={150}>
+                            <div className="flex items-center justify-center">
+                              {task.hasPendingRequest ? (
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <div className="inline-flex items-center justify-center h-8 w-8 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 cursor-default">
+                                      <Clock className="h-4 w-4 text-amber-600 animate-pulse" />
+                                    </div>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top">
+                                    <p className="text-xs">
+                                      Pending Approval (+
+                                      {
+                                        task.pendingDetails
+                                          ?.requestedExtensionDays
+                                      }{" "}
+                                      Days)
+                                    </p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              ) : (
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8 text-blue-600 bg-blue-50 hover:bg-blue-100 hover:text-blue-700 rounded-lg cursor-pointer transition-all duration-200"
+                                      onClick={() =>
+                                        handleOpenExtendModal(task)
+                                      }
+                                    >
+                                      <CalendarPlus className="h-4 w-4" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top">
+                                    <p className="text-xs">
+                                      Request Date Extension
+                                    </p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              )}
+                            </div>
+                          </TooltipProvider>
+                        </TableCell>
+                      )}
                     </TableRow>
                   ))
                 ) : (

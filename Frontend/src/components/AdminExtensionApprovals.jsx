@@ -33,18 +33,35 @@ import {
   TooltipTrigger,
 } from "../components/ui/tooltip"; // Ya "../components/ui/tooltip"
 import api from "../lib/api";
-
+import { useSelector } from "react-redux";
+import { getSubmodulePermissions } from "../utils/permissionUtils";
 const AdminExtensionApprovals = () => {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [reviewingId, setReviewingId] = useState(null);
+  const [editableDays, setEditableDays] = useState({}); // 🟢 Store custom approved days per request
+  const { permissions, isSuper } = useSelector((state) => state.permissions);
 
+  // Destructure clean capability flags
+  const { canRead, canUpdate } = getSubmodulePermissions(
+    permissions,
+    "extension_approvals",
+    isSuper,
+  );
   const fetchRequests = async () => {
     setLoading(true);
     try {
       const res = await api.get("/task-extension/pending-requests");
-      setRequests(res.data.data || []);
+      const list = res.data.data || [];
+      setRequests(list);
+
+      // Initialize editableDays with requestedExtensionDays
+      const initialDays = {};
+      list.forEach((item) => {
+        initialDays[item._id] = item.requestedExtensionDays;
+      });
+      setEditableDays(initialDays);
     } catch (err) {
       toast.error(
         err.response?.data?.message || "Failed to load approval requests",
@@ -58,12 +75,28 @@ const AdminExtensionApprovals = () => {
     fetchRequests();
   }, []);
 
+  const handleDaysChange = (requestId, value) => {
+    setEditableDays((prev) => ({
+      ...prev,
+      [requestId]: value,
+    }));
+  };
+
   const handleReview = async (requestId, action) => {
+    const rawDays = editableDays[requestId];
+    const approvedDays = Number(rawDays);
+
+    if (action === "APPROVE" && (!approvedDays || approvedDays < 1)) {
+      toast.error("Approved days must be at least 1.");
+      return;
+    }
+
     setReviewingId(requestId);
     try {
       const res = await api.post("/task-extension/review", {
         requestId,
         action,
+        approvedDays: action === "APPROVE" ? approvedDays : undefined, // 🟢 Send custom days
       });
       toast.success(res.data.message || `Request ${action.toLowerCase()}ed!`);
       fetchRequests();
@@ -179,26 +212,36 @@ const AdminExtensionApprovals = () => {
                   <TableHead>Task Title</TableHead>
                   <TableHead>Current Due Date</TableHead>
                   <TableHead>Requested Days</TableHead>
+                  <TableHead>Approve Days</TableHead>
                   <TableHead>New Due Date (If Approved)</TableHead>
                   <TableHead>Reason</TableHead>
-                  <TableHead className="text-center">
-                    Single-Click Actions
-                  </TableHead>
+                  {canUpdate && (
+                    <TableHead className="text-center">
+                      Single-Click Actions
+                    </TableHead>
+                  )}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center py-10">
+                    <TableCell colSpan={10} className="text-center py-10">
                       <RefreshCcw className="h-6 w-6 animate-spin text-emerald-500 mx-auto" />
                     </TableCell>
                   </TableRow>
                 ) : filteredRequests.length > 0 ? (
                   filteredRequests.map((req, idx) => {
+                    const currentApprovedDays =
+                      editableDays[req._id] ?? req.requestedExtensionDays;
+                    const validDays = Math.max(
+                      0,
+                      Number(currentApprovedDays) || 0,
+                    );
                     const newDueDate = moment(req.currentDueDate).add(
-                      req.requestedExtensionDays,
+                      validDays,
                       "days",
                     );
+
                     return (
                       <TableRow key={req._id} className="hover:bg-slate-50/70">
                         <TableCell>{idx + 1}</TableCell>
@@ -227,8 +270,27 @@ const AdminExtensionApprovals = () => {
                             +{req.requestedExtensionDays} Days
                           </Badge>
                         </TableCell>
+
+                        {/* 🟢 Editable Approved Days Field */}
+                        <TableCell>
+                          <div className="flex items-center gap-1.5">
+                            <Input
+                              type="number"
+                              min={1}
+                              value={currentApprovedDays}
+                              onChange={(e) =>
+                                handleDaysChange(req._id, e.target.value)
+                              }
+                              className="w-20 h-8 text-xs font-semibold text-center border-emerald-300 focus-visible:ring-emerald-500"
+                            />
+                            <span className="text-xs text-gray-500">days</span>
+                          </div>
+                        </TableCell>
+
                         <TableCell className="text-xs font-semibold text-emerald-700 whitespace-nowrap">
-                          {newDueDate.format("DD MMM YYYY")}
+                          {validDays > 0
+                            ? newDueDate.format("DD MMM YYYY")
+                            : "-"}
                         </TableCell>
                         <TableCell>
                           <Popover
@@ -250,66 +312,70 @@ const AdminExtensionApprovals = () => {
                             </button>
                           </Popover>
                         </TableCell>
-                        <TableCell className="text-center">
-                          <TooltipProvider delayDuration={150}>
-                            <div className="flex items-center justify-center gap-1.5">
-                              {/* 🟢 Single-Click Approve Button */}
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    size="icon"
-                                    variant="ghost"
-                                    disabled={reviewingId === req._id}
-                                    onClick={() =>
-                                      handleReview(req._id, "APPROVE")
-                                    }
-                                    className="h-8 w-8 rounded-lg text-emerald-600 bg-emerald-50 hover:bg-emerald-100 hover:text-emerald-700 transition-all duration-200 cursor-pointer disabled:opacity-50"
-                                  >
-                                    {reviewingId === req._id ? (
-                                      <Loader2 className="h-4 w-4 animate-spin text-emerald-600" />
-                                    ) : (
-                                      <Check className="h-4 w-4 stroke-[2.5]" />
-                                    )}
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent side="top">
-                                  <p className="text-xs font-medium">
-                                    Approve (+{req.requestedExtensionDays} Days)
-                                  </p>
-                                </TooltipContent>
-                              </Tooltip>
+                        {canUpdate && (
+                          <TableCell className="text-center">
+                            <TooltipProvider delayDuration={150}>
+                              <div className="flex items-center justify-center gap-1.5">
+                                {/* 🟢 Single-Click Approve Button */}
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      size="icon"
+                                      variant="ghost"
+                                      disabled={
+                                        reviewingId === req._id || validDays < 1
+                                      }
+                                      onClick={() =>
+                                        handleReview(req._id, "APPROVE")
+                                      }
+                                      className="h-8 w-8 rounded-lg text-emerald-600 bg-emerald-50 hover:bg-emerald-100 hover:text-emerald-700 transition-all duration-200 cursor-pointer disabled:opacity-50"
+                                    >
+                                      {reviewingId === req._id ? (
+                                        <Loader2 className="h-4 w-4 animate-spin text-emerald-600" />
+                                      ) : (
+                                        <Check className="h-4 w-4 stroke-[2.5]" />
+                                      )}
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top">
+                                    <p className="text-xs font-medium">
+                                      Approve (+{validDays} Days)
+                                    </p>
+                                  </TooltipContent>
+                                </Tooltip>
 
-                              {/* 🔴 Single-Click Reject Button */}
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    size="icon"
-                                    variant="ghost"
-                                    disabled={reviewingId === req._id}
-                                    onClick={() =>
-                                      handleReview(req._id, "REJECT")
-                                    }
-                                    className="h-8 w-8 rounded-lg text-rose-600 bg-rose-50 hover:bg-rose-100 hover:text-rose-700 transition-all duration-200 cursor-pointer disabled:opacity-50"
-                                  >
-                                    <X className="h-4 w-4 stroke-[2.5]" />
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent side="top">
-                                  <p className="text-xs font-medium text-rose-600">
-                                    Reject Request
-                                  </p>
-                                </TooltipContent>
-                              </Tooltip>
-                            </div>
-                          </TooltipProvider>
-                        </TableCell>
+                                {/* 🔴 Single-Click Reject Button */}
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      size="icon"
+                                      variant="ghost"
+                                      disabled={reviewingId === req._id}
+                                      onClick={() =>
+                                        handleReview(req._id, "REJECT")
+                                      }
+                                      className="h-8 w-8 rounded-lg text-rose-600 bg-rose-50 hover:bg-rose-100 hover:text-rose-700 transition-all duration-200 cursor-pointer disabled:opacity-50"
+                                    >
+                                      <X className="h-4 w-4 stroke-[2.5]" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top">
+                                    <p className="text-xs font-medium text-rose-600">
+                                      Reject Request
+                                    </p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </div>
+                            </TooltipProvider>
+                          </TableCell>
+                        )}
                       </TableRow>
                     );
                   })
                 ) : (
                   <TableRow>
                     <TableCell
-                      colSpan={9}
+                      colSpan={10}
                       className="text-center py-8 text-gray-500 text-xs"
                     >
                       No pending extension requests right now.
