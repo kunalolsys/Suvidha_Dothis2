@@ -1576,15 +1576,20 @@ const TaskTable = ({
                           {columns.find((c) => c.key === "description")
                             ?.visible && (
                             <TableCell>
-                              <Button
-                                variant="link"
-                                size="sm"
-                                onClick={() =>
-                                  onViewDescription(task.description)
-                                }
-                              >
-                                View
-                              </Button>
+                              {task.description ? (
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <p className="max-w-[200px] truncate text-sm text-gray-700 cursor-default">
+                                      {task.description}
+                                    </p>
+                                  </TooltipTrigger>
+                                  <TooltipContent className="max-w-xs break-words whitespace-pre-wrap">
+                                    <p>{task.description}</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              ) : (
+                                <span className="text-gray-400 text-sm">-</span>
+                              )}
                             </TableCell>
                           )}
                           {columns.find((c) => c.key === "assignedBy")
@@ -1621,7 +1626,7 @@ const TaskTable = ({
                               {task.startDate
                                 ? format(
                                     new Date(task.startDate),
-                                    "dd MMM yyyy, hh:mm a",
+                                    "dd MMM yyyy",
                                   )
                                 : "-"}
                             </TableCell>
@@ -1632,7 +1637,7 @@ const TaskTable = ({
                               {task.dueDate
                                 ? format(
                                     new Date(task.dueDate),
-                                    "dd MMM yyyy, hh:mm a",
+                                    "dd MMM yyyy",
                                   )
                                 : "-"}
                             </TableCell>
@@ -1716,13 +1721,13 @@ const TaskTable = ({
                             </TableCell>
                           )}
                           {columns.find((c) => c.key === "status")?.visible && (
-                            <TableCell className="text-center">
+                            <TableCell className="">
                               {getStatusBadge(task.status)}
                             </TableCell>
                           )}
                           {columns.find((c) => c.key === "action")?.visible &&
                             (canUpdate || canDelete) && (
-                              <TableCell className="flex items-center gap-1">
+                              <TableCell className="grid grid-cols-3 grid-rows-2 gap-1 w-fit items-center">
                                 <TooltipProvider>
                                   {canUpdate && (
                                     <Tooltip>
@@ -1967,15 +1972,20 @@ const TaskTable = ({
                           {recurringColumns.find((c) => c.key === "description")
                             ?.visible && (
                             <TableCell>
-                              <Button
-                                variant="link"
-                                size="sm"
-                                onClick={() =>
-                                  onViewDescription(task.description)
-                                }
-                              >
-                                View
-                              </Button>
+                              {task.description ? (
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <p className="max-w-[200px] truncate text-sm text-gray-700 cursor-default">
+                                      {task.description}
+                                    </p>
+                                  </TooltipTrigger>
+                                  <TooltipContent className="max-w-xs break-words whitespace-pre-wrap">
+                                    <p>{task.description}</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              ) : (
+                                <span className="text-gray-400 text-sm">-</span>
+                              )}
                             </TableCell>
                           )}
                           {recurringColumns.find((c) => c.key === "frequency")
@@ -2027,7 +2037,7 @@ const TaskTable = ({
                               {task.startDate
                                 ? format(
                                     new Date(task.startDate),
-                                    "dd MMM yyyy, hh:mm a",
+                                    "dd MMM yyyy",
                                   )
                                 : "-"}
                             </TableCell>
@@ -2038,7 +2048,7 @@ const TaskTable = ({
                               {task.endDate
                                 ? format(
                                     new Date(task.endDate),
-                                    "dd MMM yyyy, hh:mm a",
+                                    "dd MMM yyyy",
                                   )
                                 : "-"}
                             </TableCell>
@@ -2067,14 +2077,14 @@ const TaskTable = ({
                           )}
                           {recurringColumns.find((c) => c.key === "status")
                             ?.visible && (
-                            <TableCell className="text-center">
+                            <TableCell className="">
                               {getStatusBadge(task.status)}
                             </TableCell>
                           )}
                           {recurringColumns.find((c) => c.key === "action")
                             ?.visible &&
                             (canUpdate || canDelete) && (
-                              <TableCell className="flex items-center gap-1">
+                              <TableCell className="grid grid-cols-3 grid-rows-2 gap-1 w-fit items-center">
                                 <TooltipProvider>
                                   {canUpdate && (
                                     <Tooltip>
@@ -2795,7 +2805,7 @@ const TaskTable = ({
       {/* IMPORT DIALOG */}
       {/* IMPORT DIALOG */}
       <Dialog
-      className="sm:max-w-5xl max-h-[90vh] overflow-y-auto"
+        className="sm:max-w-5xl max-h-[90vh] overflow-y-auto"
         open={isImportDialogOpen}
         onOpenChange={(open) => {
           setIsImportDialogOpen(open);
@@ -2806,7 +2816,7 @@ const TaskTable = ({
           }
         }}
       >
-        <DialogContent >
+        <DialogContent>
           <DialogHeader>
             <DialogTitle className="text-xl font-bold">
               Import {importTaskType ? templates[importTaskType].name : ""}s

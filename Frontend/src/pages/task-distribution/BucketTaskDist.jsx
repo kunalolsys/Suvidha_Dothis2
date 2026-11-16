@@ -81,7 +81,9 @@ const TaskDistribution = () => {
   const fetchReportingUsers = async (bucketId) => {
     try {
       const res = await api.get(`/task-buckets/${bucketId}/reporting-users`);
-      const users = res?.data?.data || [];
+      const users = (res?.data?.data || []).filter(
+        (u) => u.role?.name?.trim().toLowerCase() === "employee",
+      );
       setReportingUsers(users);
       setIsBucketComplete(res?.data?.isBucketComplete);
 
@@ -169,24 +171,24 @@ const TaskDistribution = () => {
       }
 
       // 🟢 VALIDATION: Ensure every selected employee has a selected department
-      const unselectedDeptUser = selectedUsers.find(
-        (userId) => !selectedDepartments[userId],
-      );
+      // const unselectedDeptUser = selectedUsers.find(
+      //   (userId) => !selectedDepartments[userId],
+      // );
 
-      if (unselectedDeptUser) {
-        const userObj = reportingUsers.find(
-          (u) => u._id === unselectedDeptUser,
-        );
-        toast.error(
-          `Please select a department for ${userObj?.name || "all selected employees"}`,
-        );
-        return;
-      }
+      // if (unselectedDeptUser) {
+      //   const userObj = reportingUsers.find(
+      //     (u) => u._id === unselectedDeptUser,
+      //   );
+      //   toast.error(
+      //     `Please select a department for ${userObj?.name || "all selected employees"}`,
+      //   );
+      //   return;
+      // }
 
       // Format payload with user & their chosen department
       const assignments = selectedUsers.map((userId) => ({
         userId,
-        departmentId: selectedDepartments[userId],
+        // departmentId: selectedDepartments[userId],
       }));
 
       setLoading(true);
@@ -278,37 +280,37 @@ const TaskDistribution = () => {
     },
 
     // 🟢 NEW COLUMN: DEPARTMENT SELECTION
-    {
-      title: "Department",
-      dataIndex: "departments",
-      width: 180,
+    // {
+    //   title: "Department",
+    //   dataIndex: "departments",
+    //   width: 180,
 
-      render: (departments, record) => {
-        const isSelected = !!selectedAssignments[record.userId];
-        const hasMissingDept =
-          isSelected && !selectedDepartments[record.userId];
+    //   render: (departments, record) => {
+    //     const isSelected = !!selectedAssignments[record.userId];
+    //     const hasMissingDept =
+    //       isSelected && !selectedDepartments[record.userId];
 
-        return (
-          <Select
-            placeholder="Select Department"
-            style={{ width: "100%" }}
-            disabled={record.alreadyAssigned || isBucketComplete}
-            status={hasMissingDept ? "error" : ""}
-            value={selectedDepartments[record.userId] || undefined}
-            onChange={(deptId) => {
-              setSelectedDepartments((prev) => ({
-                ...prev,
-                [record.userId]: deptId,
-              }));
-            }}
-            options={departments.map((d) => ({
-              label: d.name || d.departmentName || d,
-              value: d._id || d,
-            }))}
-          />
-        );
-      },
-    },
+    //     return (
+    //       <Select
+    //         placeholder="Select Department"
+    //         style={{ width: "100%" }}
+    //         disabled={record.alreadyAssigned || isBucketComplete}
+    //         status={hasMissingDept ? "error" : ""}
+    //         value={selectedDepartments[record.userId] || undefined}
+    //         onChange={(deptId) => {
+    //           setSelectedDepartments((prev) => ({
+    //             ...prev,
+    //             [record.userId]: deptId,
+    //           }));
+    //         }}
+    //         options={departments.map((d) => ({
+    //           label: d.name || d.departmentName || d,
+    //           value: d._id || d,
+    //         }))}
+    //       />
+    //     );
+    //   },
+    // },
 
     // {
     //   title: "Reporting Manager",

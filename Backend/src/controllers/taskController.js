@@ -59,6 +59,7 @@ import {
   calculateCalendarDurationWithShiftSnap,
   parseFrequencyToHours,
 } from "../utils/fmsDateCalculator.js";
+import moment from "moment";
 
 // Helper: Parse Date to IST safely handling strings
 function parseDateIST(dateStr) {
@@ -3285,6 +3286,7 @@ export const getRoleBasedTasks = handleAsync(async (req, res) => {
             .populate("assignedBy", "name email")
             .populate("departmentOfAssignToUser", "name")
             .populate("dependencyConfig.taskDependent", "title")
+            .populate("bucketId", "status bucketId title")
             .sort(mongoSort)
             .lean()
         : Promise.resolve([]),
@@ -3767,6 +3769,7 @@ export const exportRoleBasedTasks = handleAsync(async (req, res) => {
   const defaultHeader = [
     "Task ID",
     "Task Title",
+    "Description",
     "Task Type",
     "Status",
     "Assigned To",
@@ -3789,6 +3792,7 @@ export const exportRoleBasedTasks = handleAsync(async (req, res) => {
         /[\r\n]+/g,
         " ",
       ),
+      Description: (item.description || "-").replace(/[\r\n]+/g, " "),
       "Task Type": item.taskType || "-",
       Status: item.status || "-",
       "Assigned To": item.assignedTo?.name
@@ -4127,7 +4131,10 @@ export const toggleTaskCompletion = handleAsync(async (req, res, next) => {
 
   const existingTask = await Task.findById(id)
     .populate("assignedTo", "name email assignShift")
-    .populate("assignedBy", "name email");
+    .populate(
+      "assignedBy",
+      "name email telegramChatId telegramUserName telegramNotificationsEnabled isDeleted isActive",
+    );
 
   if (!existingTask) return next(new AppError("Task not found", 404));
 
@@ -4174,62 +4181,88 @@ export const toggleTaskCompletion = handleAsync(async (req, res, next) => {
       }
     }
 
-    // 2. SOCKET & NOTIFICATIONS
+    // 2. SOCKET & NOTIFICATIONS (Deduplicated: assignedBy + Bucket createdBy)
     const io = getIO();
+    const completedTime = new Date();
+    const recipientsMap = new Map();
 
-    if (
-      existingTask.assignedBy?._id &&
-      existingTask.assignedBy._id.toString() !==
-        existingTask.assignedTo?._id?.toString()
-    ) {
-      io.to(existingTask.assignedBy._id.toString()).emit("notification", {
-        type: "TASK_COMPLETED",
-        title: "Task Completed",
-        description: `Task "${existingTask.title}" completed.`,
-        taskId: existingTask._id,
-        TaskId: existingTask.TaskId,
-      });
+    // Add assignedBy
+    if (existingTask.assignedBy?._id) {
+      recipientsMap.set(
+        existingTask.assignedBy._id.toString(),
+        existingTask.assignedBy,
+      );
+    }
+
+    // If task belongs to a bucket, fetch bucket & add bucket.createdBy
+    if (existingTask.bucketId) {
+      const bucket = await TaskBucket.findById(existingTask.bucketId).populate(
+        "createdBy",
+        "name email telegramChatId telegramUserName telegramNotificationsEnabled isDeleted isActive",
+      );
+
+      if (bucket?.createdBy?._id) {
+        recipientsMap.set(
+          bucket.createdBy._id.toString(),
+          bucket.createdBy,
+        );
+      }
+    }
+
+    // Exclude the assignee themselves if they completed their own task
+    const assigneeIdStr = existingTask.assignedTo?._id?.toString();
+    if (assigneeIdStr) {
+      recipientsMap.delete(assigneeIdStr);
     }
 
     const frontendUrl = `${process.env.BASE_URL}/my-day/view`;
 
-    if (
-      existingTask.assignedBy?.email &&
-      existingTask.assignedBy._id.toString() !==
-        existingTask.assignedTo._id.toString()
-    ) {
-      const emailTemplate = taskCompletedTemplate({
-        assignedByName: existingTask.assignedBy?.name || "Manager",
-        completedBy: existingTask.assignedTo?.name || "User",
-        taskId: existingTask.TaskId,
-        title: existingTask.title,
-        remark: existingTask.remark || "",
-        completedAt: existingTask.completedAt || "",
-        frontendUrl,
+    for (const [recipientId, recipient] of recipientsMap.entries()) {
+      // Skip deleted or inactive users
+      if (recipient.isDeleted || recipient.isActive === false) continue;
+
+      // A. Socket IO Notification
+      if (io) {
+        io.to(recipientId).emit("notification", {
+          type: "TASK_COMPLETED",
+          title: "Task Completed",
+          description: `Task "${existingTask.title}" completed.`,
+          taskId: existingTask._id,
+          TaskId: existingTask.TaskId,
+        });
+      }
+
+      // B. Email Notification
+      if (recipient.email) {
+        const emailTemplate = taskCompletedTemplate({
+          assignedByName: recipient.name || "Manager",
+          completedBy: existingTask.assignedTo?.name || "User",
+          taskId: existingTask.TaskId,
+          title: existingTask.title,
+          remark: existingTask.remark || "",
+          completedAt: moment(completedTime).format("DD MMM YYYY, hh:mm A"), // Output: "16 Nov 2026, 12:37 PM"
+          frontendUrl,
+        });
+
+        sendEmail({
+          to: recipient.email,
+          subject: emailTemplate.subject,
+          html: emailTemplate.html,
+        });
+      }
+
+      // C. Existing Notification Helper (Telegram / Push)
+      sendNotification({
+        type: "TASK_COMPLETED",
+        task: existingTask,
+        actor: req.user,
+        userId: recipient._id,
       });
 
-      sendEmail({
-        to: existingTask.assignedBy.email,
-        subject: emailTemplate.subject,
-        html: emailTemplate.html,
-      });
-    }
-
-    sendNotification({
-      type: "TASK_COMPLETED",
-      task: existingTask,
-      actor: req.user,
-      userId: existingTask.assignedBy._id,
-    });
-
-    if (
-      existingTask.assignedBy?._id &&
-      existingTask.assignedBy._id.toString() !==
-        existingTask.assignedTo._id.toString()
-    ) {
+      // D. Database In-App Notification
       await Notifications.create({
-        user: existingTask.assignedBy._id,
-        fromUser: existingTask.assignedTo._id,
+        user: recipient._id,
+        fromUser: existingTask.assignedTo?._id,
         type: "TASK_COMPLETED",
         title: "Task Completed",
         description: `Task "${existingTask.title}" completed please check your email.`,
@@ -4246,7 +4279,7 @@ export const toggleTaskCompletion = handleAsync(async (req, res, next) => {
 
     updateData.status = "Completed";
     updateData.taskDoneBy = req.cookies.userId || req.user._id;
-    updateData.completedAt = new Date();
+    updateData.completedAt = completedTime;
   } else {
     updateData.status = "Pending";
     updateData.taskDoneBy = null;

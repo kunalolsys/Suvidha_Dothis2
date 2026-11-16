@@ -122,21 +122,20 @@ ${task.description || "-"}
 
 <i>Suvidha Dothis2</i>
 `,
-  BUCKET_COMPLETED: ({ task, actor }) => `
+ BUCKET_COMPLETED: ({ task, actor }) => `
 🎉 <b>Bucket Completed Successfully</b>
 
 A task bucket has been marked as completed.
 
-<b>Bucket ID:</b> ${task.bucketId}
-<b>Title:</b> ${task.title}
+<b>Bucket ID:</b> ${task?.bucketId || "-"}
+<b>Title:</b> ${task?.title || "-"}
 
-<b>Completed By:</b> ${actor.name || "-"}
+<b>Completed By:</b> ${actor?.name || "-"}
 
-<b>Completed At:</b> ${task.completedAt || "-"}
+<b>Completed At:</b> ${task?.completedAt ? formatDate(task.completedAt) : "-"}
 
-${task.remark ? `<b>Remark:</b> ${task.remark}` : ""}
+${task?.remark ? `<b>Remark:</b> ${task.remark}` : ""}
 
 <i>Suvidha Dothis2</i>
-
 `,
 };

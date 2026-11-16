@@ -176,6 +176,7 @@ const TodayTaskActions = ({
   const isCompleteActiveTab = activeTab === "completed";
   const alreadyReopened = task?.isReopen;
   const fmsType = task.taskType === "FmsInstanceTask";
+  const bucketStatus = task?.bucketId?.status;
 
   return (
     <TooltipProvider>
@@ -252,26 +253,34 @@ const TodayTaskActions = ({
         {isCompleteActiveTab && !fmsType && (
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                disabled={alreadyReopened}
-                onClick={() => {
-                  setReopenTask(task);
-                  setReopenModalOpen(true);
-                }}
-                className={`h-8 w-8 cursor-pointer ${
-                  alreadyReopened
-                    ? "text-gray-400 cursor-not-allowed"
-                    : "text-yellow-600 hover:bg-yellow-50"
-                }`}
-              >
-                <RotateCcw className="h-4 w-4" />
-              </Button>
+              <span className="inline-flex">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  disabled={alreadyReopened || bucketStatus === "Completed"}
+                  onClick={() => {
+                    setReopenTask(task);
+                    setReopenModalOpen(true);
+                  }}
+                  className={`h-8 w-8 ${
+                    alreadyReopened || bucketStatus === "Completed"
+                      ? "text-gray-400 cursor-not-allowed"
+                      : "text-yellow-600 hover:bg-yellow-50 cursor-pointer"
+                  }`}
+                >
+                  <RotateCcw className="h-4 w-4" />
+                </Button>
+              </span>
             </TooltipTrigger>
 
             <TooltipContent>
-              <p>{alreadyReopened ? "Task already reopened" : "Reopen Task"}</p>
+              <p>
+                {bucketStatus === "Completed"
+                  ? "Cannot reopen: Task Bucket is already completed"
+                  : alreadyReopened
+                    ? "Task already reopened"
+                    : "Reopen Task"}
+              </p>
             </TooltipContent>
           </Tooltip>
         )}
@@ -1229,14 +1238,20 @@ const ManagerView = () => {
           </div>
         </TableCell>
         <TableCell>
-          <Button
-            variant="link"
-            className="p-0 h-auto text-blue-600"
-            onClick={() => handleViewDescription(task.description)}
-            disabled={!task.description}
-          >
-            View
-          </Button>
+          {task.description ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <p className="max-w-[200px] truncate text-sm text-gray-700 cursor-default">
+                  {task.description}
+                </p>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs break-words whitespace-pre-wrap">
+                <p>{task.description}</p>
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <span className="text-gray-400 text-sm">-</span>
+          )}
         </TableCell>
 
         {engineViewTab === "fms" &&

@@ -1151,14 +1151,20 @@ const PCView = () => {
           </div>
         </TableCell>
         <TableCell>
-          <Button
-            variant="link"
-            className="p-0 h-auto text-blue-600"
-            onClick={() => handleViewDescription(task.description)}
-            disabled={!task.description}
-          >
-            View
-          </Button>
+          {task.description ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <p className="max-w-[200px] truncate text-sm text-gray-700 cursor-default">
+                  {task.description}
+                </p>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs break-words whitespace-pre-wrap">
+                <p>{task.description}</p>
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <span className="text-gray-400 text-sm">-</span>
+          )}
         </TableCell>
 
         {/* ⚡ RENDER DYNAMIC CELLS FOR FMS SUBMISSION DATA */}

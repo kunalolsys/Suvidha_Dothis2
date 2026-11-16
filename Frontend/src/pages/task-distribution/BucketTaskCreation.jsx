@@ -634,7 +634,7 @@ const BucketCreation = () => {
                       options={roles
                         .filter(
                           (r) =>
-                            !["admin", "owner", "member"].includes(
+                            !["owner", "member"].includes(
                               r.name?.toLowerCase(),
                             ),
                         )
@@ -669,7 +669,7 @@ const BucketCreation = () => {
                           )
                           .map((r) => ({
                             value: r._id,
-                            label:r.displayName || r.name,
+                            label: r.displayName || r.name,
                           }))}
                       />
                     </div>

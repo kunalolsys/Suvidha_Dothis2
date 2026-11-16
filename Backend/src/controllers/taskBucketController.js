@@ -22,6 +22,7 @@ import {
   parseFrequencyToHours,
 } from "../utils/fmsDateCalculator.js";
 import Role from "../models/Role.js";
+import { sendNotificationAlert } from "../utils/notificationHelper.js";
 
 // =======================================================
 // CREATE BUCKET TASK
@@ -666,23 +667,12 @@ export const getSingleTaskBucket = async (req, res) => {
 export const distributeTaskBucket = async (req, res) => {
   try {
     const { id } = req.params;
-    const { selectedUsers = [], assignments = [] } = req.body;
+    const { selectedUsers = [] } = req.body;
 
     const userId = req.cookies?.userId || req.user?._id;
 
-    // Build department lookup map from assignments array: { [userId]: departmentId }
-    const departmentMap = {};
-    if (Array.isArray(assignments) && assignments.length > 0) {
-      assignments.forEach((item) => {
-        if (item.userId && item.departmentId) {
-          departmentMap[String(item.userId)] = item.departmentId;
-        }
-      });
-    }
-
     // Resolve list of target user IDs
-    const targetUserIds =
-      selectedUsers.length > 0 ? selectedUsers : Object.keys(departmentMap);
+    const targetUserIds = selectedUsers;
 
     // =====================================================
     // GET BUCKET
@@ -766,20 +756,8 @@ export const distributeTaskBucket = async (req, res) => {
         });
       }
 
-      // Resolve department
-      const deptId =
-        departmentMap[String(user._id)] ||
-        assignedUser?.department?.[0]?._id ||
-        assignedUser?.department?.[0] ||
-        assignedUser?.department ||
-        null;
-
-      if (!deptId) {
-        return res.status(400).json({
-          success: false,
-          message: `Department is required for ${assignedUser?.name}`,
-        });
-      }
+      // 🟢 Resolve department directly from backend User document (null if not linked)
+      const deptId = assignedUser?.department || null;
 
       const workShift = assignedUser.assignShift;
 
@@ -1238,18 +1216,15 @@ export const getBucketReportingUsers = async (req, res) => {
 export const completeTaskBucket = async (req, res) => {
   try {
     const { id } = req.params;
-
     const { remark } = req.body;
-
     const userId = req.cookies.userId || req.user._id;
 
     // =====================================================
-    // GET BUCKET
+    // GET BUCKET (Populate createdBy with Telegram fields)
     // =====================================================
-
     const bucket = await TaskBucket.findById(id).populate(
       "createdBy",
-      "name email",
+      "name email telegramChatId telegramNotificationsEnabled isDeleted isActive",
     );
 
     if (!bucket) {
@@ -1262,7 +1237,6 @@ export const completeTaskBucket = async (req, res) => {
     // =====================================================
     // ALREADY COMPLETED
     // =====================================================
-
     if (bucket.status === "Completed") {
       return res.status(400).json({
         success: false,
@@ -1273,7 +1247,6 @@ export const completeTaskBucket = async (req, res) => {
     // =====================================================
     // GET ALL RELATED TASKS
     // =====================================================
-
     const relatedTasks = await Task.find({
       bucketId: bucket._id,
     }).select("assignedTo status completedAt title");
@@ -1281,7 +1254,6 @@ export const completeTaskBucket = async (req, res) => {
     // =====================================================
     // CHECK ALL TASKS COMPLETED
     // =====================================================
-
     const incompleteTasks = relatedTasks.filter(
       (task) => task.status !== "Completed",
     );
@@ -1296,13 +1268,10 @@ export const completeTaskBucket = async (req, res) => {
     // =====================================================
     // COMPLETE BUCKET
     // =====================================================
-
+    const completedTime = new Date();
     bucket.status = "Completed";
-
     bucket.completedBy = userId;
-
-    bucket.completedAt = new Date();
-
+    bucket.completedAt = completedTime;
     bucket.remark = remark || "";
 
     await bucket.save();
@@ -1310,41 +1279,78 @@ export const completeTaskBucket = async (req, res) => {
     // =====================================================
     // COMPLETED USER
     // =====================================================
-
     const completedUser = await User.findById(userId).select("name email");
 
     // =====================================================
-    // SEND EMAIL
+    // NOTIFICATIONS (SOCKET IO + DB + EMAIL + TELEGRAM)
     // =====================================================
+    const creator = bucket.createdBy;
+    const isDifferentUser =
+      creator?._id && creator._id.toString() !== userId.toString();
 
-    if (bucket.createdBy?.email) {
-      const frontendUrl = `${process.env.BASE_URL}/delegate/bucket-view`;
-      const emailTemplate = bucketCompletedTemplate({
-        bucketId: bucket.bucketId,
-        bucketTitle: bucket.title,
-        completedBy: completedUser?.name,
-        completedAt: new Date(bucket.completedAt).toLocaleString("en-IN"),
-        remark,
-        frontendUrl,
+    if (isDifferentUser && !creator.isDeleted && creator.isActive !== false) {
+      const io = getIO();
+      const formattedCompletedAt = completedTime.toLocaleString("en-IN", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
       });
 
-      sendEmail({
-        to: bucket.createdBy.email,
-        subject: emailTemplate.subject,
-        html: emailTemplate.html,
+      // 1. Socket IO Realtime Notification
+      if (io) {
+        io.to(creator._id.toString()).emit("notification", {
+          type: "BUCKET_COMPLETED",
+          title: "Task Bucket Completed",
+          description: `Bucket "${bucket.title}" (${bucket.bucketId}) has been completed.`,
+          bucketId: bucket._id,
+        });
+      }
+
+      // 2. Database In-App Notification
+      await Notifications.create({
+        user: creator._id,
+        fromUser: userId,
+        type: "BUCKET_COMPLETED",
+        title: "Task Bucket Completed",
+        description: `Bucket "${bucket.title}" (${bucket.bucketId}) completed by ${completedUser?.name || "User"}.`,
+        relatedId: bucket._id,
       });
+
+      // 3. Email Notification
+      if (creator.email) {
+        const frontendUrl = `${process.env.BASE_URL}/delegate/bucket-view`;
+        const emailTemplate = bucketCompletedTemplate({
+          bucketId: bucket.bucketId,
+          bucketTitle: bucket.title,
+          completedBy: completedUser?.name,
+          completedAt: formattedCompletedAt,
+          remark,
+          frontendUrl,
+        });
+
+        sendEmail({
+          to: creator.email,
+          subject: emailTemplate.subject,
+          html: emailTemplate.html,
+        }).catch((e) => console.error("Bucket Email Error:", e.message));
+      }
+
+      // 4. Existing Notification Helper
+      sendNotification({
+        type: "BUCKET_COMPLETED",
+        task: bucket,
+        actor: completedUser,
+        userId: creator._id,
+      });
+
     }
-    sendNotification({
-      type: "BUCKET_COMPLETED",
-      task: bucket,
-      actor: completedUser,
-      userId: bucket.createdBy._id,
-    });
 
     // =====================================================
     // RESPONSE
     // =====================================================
-
     return res.status(200).json({
       success: true,
       message: "Bucket completed successfully",
@@ -1352,7 +1358,6 @@ export const completeTaskBucket = async (req, res) => {
     });
   } catch (err) {
     console.error(err);
-
     return res.status(500).json({
       success: false,
       message: err.message || "Failed to complete bucket",

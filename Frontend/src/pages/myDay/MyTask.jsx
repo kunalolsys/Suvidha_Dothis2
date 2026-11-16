@@ -211,7 +211,7 @@ const TaskActions = ({
   const isFms = task.taskType == "FmsInstanceTask";
 
   return (
-    <div className="flex gap-1">
+    <div className="grid grid-cols-3 gap-1">
       {/* Checklist Button */}
       <Tooltip>
         <TooltipTrigger asChild>
@@ -1148,14 +1148,20 @@ const TodayTasksTable = ({
                     </TableCell>
 
                     <TableCell>
-                      <Button
-                        variant="link"
-                        className="p-0 h-auto text-blue-600"
-                        onClick={() => onViewDescription(task)}
-                        disabled={!task.description}
-                      >
-                        View
-                      </Button>
+                      {task.description ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <p className="max-w-[200px] truncate text-sm text-gray-700 cursor-default">
+                              {task.description}
+                            </p>
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-xs break-words whitespace-pre-wrap">
+                            <p>{task.description}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      ) : (
+                        <span className="text-gray-400 text-sm">-</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       <span
@@ -1628,8 +1634,8 @@ const MyTask = () => {
           : "-",
         "Due Date": task?.dueDate
           ? new Date(task.dueDate).toLocaleDateString()
-          : "-", 
-           "Completed At": task?.completedAt
+          : "-",
+        "Completed At": task?.completedAt
           ? new Date(task.completedAt).toLocaleDateString()
           : "-",
         Delay: task?.delay || "-",

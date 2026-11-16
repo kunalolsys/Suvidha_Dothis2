@@ -16,7 +16,7 @@ export const formatDate = (dateString) => {
     hour12: true,
   });
 
-  return `${day} ${month} ${year}, ${time}`;
+  return `${day} ${month} ${year} `;
 };
 
 export const formatLabel = (text = "") => {

@@ -266,20 +266,24 @@ const UserExtendTasksList = () => {
                         {task.title}
                       </TableCell>
                       <TableCell>
-                        <Button
-                          variant="link"
-                          className="p-0 h-auto text-blue-600 text-xs"
-                          onClick={() => {
-                            setFullDesc(task.description || "No description.");
-                            setDescDialogOpen(true);
-                          }}
-                        >
-                          View
-                        </Button>
+                        {task.description ? (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <p className="max-w-[200px] truncate text-sm text-gray-700 cursor-default">
+                                {task.description}
+                              </p>
+                            </TooltipTrigger>
+                            <TooltipContent className="max-w-xs break-words whitespace-pre-wrap">
+                              <p>{task.description}</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        ) : (
+                          <span className="text-gray-400 text-sm">-</span>
+                        )}
                       </TableCell>
                       <TableCell className="text-xs text-gray-700 whitespace-nowrap">
                         {task.dueDate
-                          ? moment(task.dueDate).format("DD MMM YYYY, hh:mm A")
+                          ? moment(task.dueDate).format("DD MMM YYYY")
                           : "-"}
                       </TableCell>
                       {/* <TableCell>
