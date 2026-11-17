@@ -1106,7 +1106,7 @@ const TodayTasksTable = ({
                         <span className="text-sm font-medium text-gray-900">
                           {task.assignedBy?.name || "-"}
                         </span>
-                        {assignedByUser?.name && (
+                        {/* {assignedByUser?.name && (
                           <span
                             className={`text-xs px-2 py-0.5 rounded-full w-fit font-medium
       ${
@@ -1120,7 +1120,7 @@ const TodayTasksTable = ({
                           >
                             {assignedByUser.role?.name}
                           </span>
-                        )}
+                        )} */}
                       </div>
                     </TableCell>
                     <TableCell>
@@ -1129,7 +1129,7 @@ const TodayTasksTable = ({
                           {task.assignedTo?.name || "-"}
                         </span>
 
-                        {assignedToUser?.name && (
+                        {/* {assignedToUser?.name && (
                           <span
                             className={`text-xs px-2 py-0.5 rounded-full w-fit font-medium
       ${
@@ -1143,7 +1143,7 @@ const TodayTasksTable = ({
                           >
                             {assignedToUser.role?.name}
                           </span>
-                        )}
+                        )} */}
                       </div>
                     </TableCell>
 
@@ -1639,12 +1639,12 @@ const MyTask = () => {
           ? new Date(task.completedAt).toLocaleDateString()
           : "-",
         Delay: task?.delay || "-",
-        "Created At": task?.createdAt
-          ? new Date(task.createdAt).toLocaleString()
-          : "-",
-        "Updated At": task?.updatedAt
-          ? new Date(task.updatedAt).toLocaleString()
-          : "-",
+        // "Created At": task?.createdAt
+        //   ? new Date(task.createdAt).toLocaleString()
+        //   : "-",
+        // "Updated At": task?.updatedAt
+        //   ? new Date(task.updatedAt).toLocaleString()
+        //   : "-",
       }));
 
       const worksheet = XLSX.utils.json_to_sheet(dataToExport);

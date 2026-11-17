@@ -183,7 +183,7 @@ const BaseTaskSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
-    // 🔥 Added Soft Delete Flag across all tasks
+    // Added Soft Delete Flag across all tasks
     isDeleted: {
       type: Boolean,
       default: false,
@@ -316,6 +316,30 @@ const RecurringTaskSchema = new mongoose.Schema({
       ],
     },
   ],
+  monthlyScheduleType: {
+    type: String,
+    enum: ["date", "week", null],
+    default: "date",
+  },
+  monthlyOccurrence: {
+    type: String,
+    enum: ["first", "second", "third", "fourth", "last", null],
+    default: null,
+  },
+  monthlyWeekDay: {
+    type: String,
+    enum: [
+      "monday",
+      "tuesday",
+      "wednesday",
+      "thursday",
+      "friday",
+      "saturday",
+      "sunday",
+      null,
+    ],
+    default: null,
+  },
   endDate: {
     type: Date,
     default: null,

@@ -54,9 +54,9 @@ export const updateMasterConfig = handleAsync(async (req, res) => {
 // 2. Fetch eligible tasks for the user (whose due date falls within master's daysBeforeDueDate window)
 export const getEligibleTasksForExtension = handleAsync(async (req, res) => {
   const userId = req.user?._id || req.body.userId;
-  let master = (await TaskExtensionMaster.findOne({
+  let master = await TaskExtensionMaster.findOne({
     isActive: true,
-  }).lean())
+  }).lean();
   if (!master) {
     master = await TaskExtensionMaster.create({
       daysBeforeDueDate: 2,
@@ -64,16 +64,15 @@ export const getEligibleTasksForExtension = handleAsync(async (req, res) => {
     });
   }
   const daysWindow = Number(master.daysBeforeDueDate ?? 2);
-  const startWindow = moment().startOf("day").toDate();
   const thresholdDate = moment().add(daysWindow, "days").endOf("day").toDate();
 
-  // Fetch active delegation tasks that are not completed and fall within the extension window
+  // Fetch active delegation tasks due on or before thresholdDate (master window se pehle aur us din tak ke tasks)
   const tasks = await Task.find({
     assignedTo: userId,
     taskType: "DelegationTask",
     isDeleted: { $ne: true },
     status: { $nin: ["Completed", "Stopped", "Not Done", "Overdue"] },
-    dueDate: { $gte: startWindow, $lte: thresholdDate },
+    dueDate: { $lte: thresholdDate },
   })
     .populate("assignedBy", "name email")
     .populate("departmentOfAssignToUser", "name")
@@ -243,7 +242,10 @@ export const reviewExtensionRequest = handleAsync(async (req, res, next) => {
 
   if (!["APPROVE", "REJECT"].includes(action)) {
     return next(
-      new AppError("Invalid action. Allowed values are APPROVE or REJECT.", 400),
+      new AppError(
+        "Invalid action. Allowed values are APPROVE or REJECT.",
+        400,
+      ),
     );
   }
 
@@ -287,7 +289,7 @@ export const reviewExtensionRequest = handleAsync(async (req, res, next) => {
     extRequest.reviewedAt = new Date();
     await extRequest.save();
 
-   const isAdjusted = finalDays !== extRequest.requestedExtensionDays;
+    const isAdjusted = finalDays !== extRequest.requestedExtensionDays;
     const extensionSummary = isAdjusted
       ? `<b>${finalDays} day(s)</b> (adjusted from ${extRequest.requestedExtensionDays} requested day(s))`
       : `<b>${finalDays} day(s)</b>`;
@@ -314,7 +316,7 @@ export const reviewExtensionRequest = handleAsync(async (req, res, next) => {
     extRequest.reviewedAt = new Date();
     await extRequest.save();
 
- await sendNotificationAlert({
+    await sendNotificationAlert({
       io,
       user,
       title: "Task Due Date Extension Declined",

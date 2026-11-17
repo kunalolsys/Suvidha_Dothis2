@@ -9,6 +9,10 @@ import {
   addDays,
   addWeeks,
   differenceInCalendarDays,
+  startOfMonth,
+  endOfMonth,
+  startOfWeek,
+  endOfWeek,
 } from "date-fns";
 import mongoose from "mongoose";
 import AppError from "../utils/AppError.js";
@@ -219,6 +223,9 @@ export const createTask = handleAsync(async (req, res, next) => {
     recurrenceEndDate,
     weekStartDay,
     repeatAfter,
+    monthlyScheduleType,
+    monthlyOccurrence,
+    monthlyWeekDay,
     taskEndTime,
     // delegationFlowEnabled,
   } = req.body;
@@ -428,76 +435,87 @@ export const createTask = handleAsync(async (req, res, next) => {
     // 🟢 CASE C: NON-DEPENDENT STANDARD TASK
     // =========================================================================
     else {
-      let taskStartDate;
+      const isMonthlyWeekWiseTask =
+        isRec &&
+        (frequency || recurrenceFrequency)?.toLowerCase() === "monthly" &&
+        monthlyScheduleType === "week";
 
-      // User Start Date Handling
-      if (cleanField(startDate)) {
-        taskStartDate = parseDateIST(startDate);
-        // Agar date me 12:00 AM (00:00:00) aaya, toh auto shift startTime par snap karo
-        if (
-          taskStartDate.getHours() === 0 &&
-          taskStartDate.getMinutes() === 0
-        ) {
-          taskStartDate = snapToShiftTime(taskStartDate, workShift, true);
-        }
+      if (isMonthlyWeekWiseTask && !cleanField(startDate)) {
+        dates = {
+          startDate: null,
+          dueDate: null,
+        };
       } else {
-        taskStartDate = new Date();
-      }
+        let taskStartDate;
 
-      // Check Working Day / Holiday / Shift Bounds
-      const isWorking = await isWorkingDay(taskStartDate, workShift, deptId);
-      const isHoli = await isHoliday(taskStartDate, deptId);
-      const shiftEnd = snapToShiftTime(taskStartDate, workShift, false);
-
-      if (!isWorking || isHoli || taskStartDate >= shiftEnd) {
-        let nextDay = new Date(taskStartDate);
-        if (taskStartDate >= shiftEnd) {
-          nextDay.setDate(nextDay.getDate() + 1);
+        // User Start Date Handling
+        if (cleanField(startDate)) {
+          taskStartDate = parseDateIST(startDate);
+          if (
+            taskStartDate.getHours() === 0 &&
+            taskStartDate.getMinutes() === 0
+          ) {
+            taskStartDate = snapToShiftTime(taskStartDate, workShift, true);
+          }
+        } else {
+          taskStartDate = new Date();
         }
 
-        const nextWorkingShift = await nextWorkingShiftDate(
-          nextDay,
-          workShift._id,
-          {},
-          deptId,
-        );
+        // Check Working Day / Holiday / Shift Bounds
+        const isWorking = await isWorkingDay(taskStartDate, workShift, deptId);
+        const isHoli = await isHoliday(taskStartDate, deptId);
+        const shiftEnd = snapToShiftTime(taskStartDate, workShift, false);
 
-        taskStartDate = snapToShiftTime(nextWorkingShift, workShift, true);
-      }
+        if (!isWorking || isHoli || taskStartDate >= shiftEnd) {
+          let nextDay = new Date(taskStartDate);
+          if (taskStartDate >= shiftEnd) {
+            nextDay.setDate(nextDay.getDate() + 1);
+          }
 
-      let calculatedDue = null;
+          const nextWorkingShift = await nextWorkingShiftDate(
+            nextDay,
+            workShift._id,
+            {},
+            deptId,
+          );
 
-      // 1. TaskEndDays diya gaya ho
-      if (parsedTaskEndDays !== null && parsedTaskEndDays > 0) {
-        const endDaysParsed = { isDay: true, value: parsedTaskEndDays };
-        calculatedDue = await calculateCalendarDurationWithShiftSnap(
-          taskStartDate,
-          endDaysParsed,
-          workShift._id,
-          deptId,
-        );
-      }
-      // 2. Direct Due Date di gayi ho
-      else if (cleanField(dueDate)) {
-        calculatedDue = parseDateIST(dueDate);
-        if (
-          calculatedDue.getHours() === 0 &&
-          calculatedDue.getMinutes() === 0
-        ) {
-          calculatedDue = snapToShiftTime(calculatedDue, workShift, false);
+          taskStartDate = snapToShiftTime(nextWorkingShift, workShift, true);
         }
-      }
 
-      // Explicit taskEndTime (Agar front end se aaya ho)
-      if (calculatedDue && taskEndTime) {
-        const [hours, minutes] = taskEndTime.split(":").map(Number);
-        calculatedDue.setHours(hours, minutes, 0, 0);
-      }
+        let calculatedDue = null;
 
-      dates = {
-        startDate: taskStartDate,
-        dueDate: calculatedDue,
-      };
+        // 1. TaskEndDays diya gaya ho
+        if (parsedTaskEndDays !== null && parsedTaskEndDays > 0) {
+          const endDaysParsed = { isDay: true, value: parsedTaskEndDays };
+          calculatedDue = await calculateCalendarDurationWithShiftSnap(
+            taskStartDate,
+            endDaysParsed,
+            workShift._id,
+            deptId,
+          );
+        }
+        // 2. Direct Due Date di gayi ho
+        else if (cleanField(dueDate)) {
+          calculatedDue = parseDateIST(dueDate);
+          if (
+            calculatedDue.getHours() === 0 &&
+            calculatedDue.getMinutes() === 0
+          ) {
+            calculatedDue = snapToShiftTime(calculatedDue, workShift, false);
+          }
+        }
+
+        // Explicit taskEndTime (Agar front end se aaya ho)
+        if (calculatedDue && taskEndTime) {
+          const [hours, minutes] = taskEndTime.split(":").map(Number);
+          calculatedDue.setHours(hours, minutes, 0, 0);
+        }
+
+        dates = {
+          startDate: taskStartDate,
+          dueDate: calculatedDue,
+        };
+      }
     }
 
     // TaskEndDays sync
@@ -576,12 +594,23 @@ export const createTask = handleAsync(async (req, res, next) => {
         }
       }
 
+      const isMonthlyWeekWise =
+        modelFrequency === "Monthly" && monthlyScheduleType === "week";
+
       newTask = new RecurringTask({
         ...commonFields,
         frequency: modelFrequency,
         weekDays: parsedWeekDays,
         weekStartDay,
         repeatAfter,
+        monthlyScheduleType:
+          modelFrequency === "Monthly" ? monthlyScheduleType || "date" : "date",
+        monthlyOccurrence: isMonthlyWeekWise
+          ? String(monthlyOccurrence || "").toLowerCase() || null
+          : null,
+        monthlyWeekDay: isMonthlyWeekWise
+          ? String(monthlyWeekDay || "").toLowerCase() || null
+          : null,
         endDate: recurrenceEndDate,
         attachmentFile: req.files
           ? req.files.map((file) => `${req.uploadFolder}/${file.filename}`)
@@ -813,34 +842,27 @@ export const getAllTasksWithStats = async (req, res) => {
     const now = new Date();
     const todayStart = startOfDay(now);
     const todayEnd = endOfDay(now);
+    const todayRange = { $gte: todayStart, $lte: todayEnd };
 
-    let dateFilter = {};
+    let dateRange = null;
 
-    // 👉 TODAY
+    // 👉 TODAY (jinki dueDate aaj hai)
     if (filterType === "today") {
-      dateFilter = {
-        createdAt: { $gte: todayStart, $lte: todayEnd },
-      };
+      dateRange = todayRange;
     }
 
-    // 👉 THIS WEEK (Monday Start)
+    // 👉 THIS WEEK (Monday Start — jinki dueDate is week mein padti hai)
     if (filterType === "week") {
       const weekStart = startOfWeek(now, { weekStartsOn: 1 });
       const weekEnd = endOfWeek(now, { weekStartsOn: 1 });
-
-      dateFilter = {
-        createdAt: { $gte: weekStart, $lte: weekEnd },
-      };
+      dateRange = { $gte: weekStart, $lte: weekEnd };
     }
 
-    // 👉 THIS MONTH
+    // 👉 THIS MONTH (jinki dueDate is month mein padti hai)
     if (filterType === "month") {
       const monthStart = startOfMonth(now);
       const monthEnd = endOfMonth(now);
-
-      dateFilter = {
-        createdAt: { $gte: monthStart, $lte: monthEnd },
-      };
+      dateRange = { $gte: monthStart, $lte: monthEnd };
     }
 
     // =========================
@@ -922,25 +944,34 @@ export const getAllTasksWithStats = async (req, res) => {
     const isDoThisEnabled = isModuleEnabled("DO_THIS2");
 
     // =========================
-    // 🧠 DO_THIS TASK MATCH FILTER
+    // 🧠 DO_THIS TASK BASE & FILTERED MATCH
     // =========================
-    const filter = {
-      ...dateFilter,
+    const baseTaskFilter = {
       taskType: { $ne: "RecurringTask" },
       isDeleted: { $ne: true },
       ...(andConditions.length > 0 && { $and: andConditions }),
     };
 
+    const filter = {
+      ...baseTaskFilter,
+      ...(dateRange && { dueDate: dateRange }),
+    };
+
+    const todayTaskFilter = {
+      ...baseTaskFilter,
+      dueDate: todayRange,
+    };
+
     // =========================
-    // 🧩 FMS TASK MATCH FILTER
+    // 🧩 FMS TASK BASE & FILTERED MATCH
     // =========================
-    const fmsFilter = {
+    const baseFmsFilter = {
       isTerminated: { $ne: true },
       status: { $nin: ["Terminated"] },
     };
 
     if (andConditions.length > 0) {
-      fmsFilter.$and = andConditions.map((cond) => {
+      baseFmsFilter.$and = andConditions.map((cond) => {
         if (cond.$or) {
           return {
             $or: cond.$or.map((c) => ({
@@ -953,28 +984,43 @@ export const getAllTasksWithStats = async (req, res) => {
       });
     }
 
-    if (dateFilter.createdAt) {
-      fmsFilter.plannedStartDate = dateFilter.createdAt;
-    }
+    const fmsFilter = {
+      ...baseFmsFilter,
+      ...(dateRange && { plannedEndDate: dateRange }),
+    };
+
+    const todayFmsFilter = {
+      ...baseFmsFilter,
+      plannedEndDate: todayRange,
+    };
 
     // =========================
-    // 🚀 ULTRA-FAST AGGREGATION COUNTS (NO DOCUMENTS FETCHED)
+    // 🚀 ULTRA-FAST PARALLEL AGGREGATION & TODAY COUNTS
     // =========================
-    const [taskStats, fmsStats] = await Promise.all([
-      isDoThisEnabled
-        ? Task.aggregate([
-            { $match: filter },
-            { $group: { _id: "$status", count: { $sum: 1 } } },
-          ])
-        : Promise.resolve([]),
+    const [taskStats, fmsStats, todayDoThisCount, todayFmsCount] =
+      await Promise.all([
+        isDoThisEnabled
+          ? Task.aggregate([
+              { $match: filter },
+              { $group: { _id: "$status", count: { $sum: 1 } } },
+            ])
+          : Promise.resolve([]),
 
-      isFmsEnabled
-        ? FmsInstanceTask.aggregate([
-            { $match: fmsFilter },
-            { $group: { _id: "$status", count: { $sum: 1 } } },
-          ])
-        : Promise.resolve([]),
-    ]);
+        isFmsEnabled
+          ? FmsInstanceTask.aggregate([
+              { $match: fmsFilter },
+              { $group: { _id: "$status", count: { $sum: 1 } } },
+            ])
+          : Promise.resolve([]),
+
+        isDoThisEnabled
+          ? Task.countDocuments(todayTaskFilter)
+          : Promise.resolve(0),
+
+        isFmsEnabled
+          ? FmsInstanceTask.countDocuments(todayFmsFilter)
+          : Promise.resolve(0),
+      ]);
 
     const statusCounts = {
       Pending: 0,
@@ -993,9 +1039,12 @@ export const getAllTasksWithStats = async (req, res) => {
       }
     }
 
+    const todayCount = todayDoThisCount + todayFmsCount;
+
     return res.status(200).json({
       success: true,
       total,
+      todayCount,
       counts: statusCounts,
     });
   } catch (error) {
@@ -1170,7 +1219,7 @@ export const filterTasks = handleAsync(async (req, res) => {
   //     query.status = "Completed";
   //   }
   // }
-// 📊 STAT FILTER (Due Date based)
+  // 📊 STAT FILTER (Due Date based)
   if (stat === "overdue") {
     andConditions.push({
       dueDate: { $lt: now },
@@ -2012,12 +2061,20 @@ export const exportMYTasks = handleAsync(async (req, res) => {
         taskType: "DelegationTask",
       });
       andConditions.push({
-        startDate: { $gte: start, $lte: end },
+        dueDate: { $gte: start, $lte: end }, // 🟢 dueDate se filter
       });
     }
 
     if (taskCategory === "upcoming") {
-      query.status = "Upcoming";
+      andConditions.push({
+        $or: [
+          { status: "Upcoming" },
+          {
+            dueDate: { $gt: todayEnd },
+            status: { $nin: ["Completed", "Stopped", "Not Done"] },
+          },
+        ],
+      });
     }
 
     if (taskCategory === "completed") {
@@ -2040,7 +2097,7 @@ export const exportMYTasks = handleAsync(async (req, res) => {
     // default hide recurring templates
     query.taskType = { $ne: "RecurringTask" };
   }
-  // 📅 DATE RANGE FILTER (startDate OR dueDate)
+
   // 📅 DATE RANGE FILTER (FIXED)
   if (startDate || endDate) {
     const filter = {};
@@ -2066,13 +2123,13 @@ export const exportMYTasks = handleAsync(async (req, res) => {
   if (andConditions.length > 0) {
     query.$and = andConditions;
   }
-  if (query.status !== "Upcoming") {
+  if (taskCategory !== "upcoming" && query.status !== "Upcoming") {
     query.isVisible = true;
   }
+
   // =========================
   // MODULE ENABLE CHECK
   // =========================
-
   const moduleSettings = await ModuleSetting.find({
     moduleKey: { $in: ["FMS_ENGINE", "DO_THIS2"] },
   }).lean();
@@ -2085,11 +2142,10 @@ export const exportMYTasks = handleAsync(async (req, res) => {
   const isFmsEnabled = isModuleEnabled("FMS_ENGINE");
   const isDoThisEnabled = isModuleEnabled("DO_THIS2");
 
-  // query.taskType = { $ne: "RecurringTask" };
   // 🚀 QUERY EXECUTION
   const [tasks, total] = await Promise.all([
     isDoThisEnabled
-      ? Task.find(query) // 🔥 Only visible tasks
+      ? Task.find(query)
           .populate("assignedTo", "name email department assignShift")
           .populate("assignedBy", "name email")
           .populate("departmentOfAssignToUser", "name")
@@ -2097,10 +2153,9 @@ export const exportMYTasks = handleAsync(async (req, res) => {
           .sort({ createdAt: -1 })
       : Promise.resolve([]),
 
-    // .skip(skip)
-    // .limit(limit)
-    isDoThisEnabled ? Task.countDocuments(query) : Promise.resolve(0), // 🔥 Count only visible
+    isDoThisEnabled ? Task.countDocuments(query) : Promise.resolve(0),
   ]);
+
   //**get recurring task in upcoming section  */
   // 🔥 STEP 2: Get recurring TEMPLATES (not instances)
   const recurringQuery = {
@@ -2110,17 +2165,15 @@ export const exportMYTasks = handleAsync(async (req, res) => {
   // reuse same AND conditions except date + taskType
   if (andConditions.length > 0) {
     recurringQuery.$and = andConditions.filter((cond) => {
-      // ❌ remove date filters
-      return !(cond.startDate || cond.dueDate);
+      // ❌ remove date filters & upcoming $or filter
+      return !(cond.startDate || cond.dueDate || cond.$or);
     });
   }
   const recurringTemplates = isDoThisEnabled
     ? await Task.find({
         ...recurringQuery,
         taskType: "RecurringTask",
-        // Apply your userId/departmentId filters here
-        assignedTo: userId, // or your filter logic
-        // isVisible: true,
+        assignedTo: userId,
         startDate: { $exists: true },
         frequency: { $ne: "Daily" },
       })
@@ -2151,9 +2204,9 @@ export const exportMYTasks = handleAsync(async (req, res) => {
 
     const searchDays =
       template.frequency === "Yearly"
-        ? 366 * 5
+        ? 366
         : template.frequency === "Half Yearly"
-          ? 366 * 2
+          ? 366
           : template.frequency === "Quarterly"
             ? 366
             : 120;
@@ -2265,7 +2318,6 @@ export const exportMYTasks = handleAsync(async (req, res) => {
       // ==================================================
       // CHECK HOLIDAY / WORKING DAY
       // ==================================================
-
       const isHolidayDate = await isHoliday(date, targetUserId);
 
       const isWorking = await isWorkingDay(date, workShift, targetUserId);
@@ -2284,7 +2336,6 @@ export const exportMYTasks = handleAsync(async (req, res) => {
       // ==================================================
       // SKIP already created occurrence
       // ==================================================
-
       const key = `${template._id}_${format(startOfDay(date), "yyyy-MM-dd")}`;
 
       if (existingMap.has(key)) {
@@ -2440,11 +2491,20 @@ export const exportMYTasks = handleAsync(async (req, res) => {
       const end = endOfDay(new Date());
 
       fmsQuery.status = { $in: ["Pending", "Delayed", "Overdue"] };
-      fmsQuery.plannedStartDate = { $gte: start, $lte: end };
+      fmsQuery.plannedDueDate = { $gte: start, $lte: end }; // 🟢 plannedDueDate se filter
     }
 
     if (taskCategory === "upcoming") {
-      fmsQuery.status = "Upcoming";
+      fmsQuery.$and = fmsQuery.$and || [];
+      fmsQuery.$and.push({
+        $or: [
+          { status: "Upcoming" },
+          {
+            plannedDueDate: { $gt: todayEnd },
+            status: { $nin: ["Completed", "Stopped", "Not Done"] },
+          },
+        ],
+      });
     }
 
     if (taskCategory === "completed") {
@@ -2464,7 +2524,7 @@ export const exportMYTasks = handleAsync(async (req, res) => {
       ? FmsInstanceTask.find(fmsQuery)
           .populate("assignedTo", "name email department assignShift")
           .populate("assignedBy", "name email")
-          .populate("updatedBy", "name email") // use as assignedBy fallback
+          .populate("updatedBy", "name email")
           .populate("departmentOfAssignToUser", "name")
           .sort({ createdAt: -1 })
           .lean()
@@ -2514,7 +2574,6 @@ export const exportMYTasks = handleAsync(async (req, res) => {
     data: finalData,
   });
 });
-
 export const exportMYFMSTasks = handleAsync(async (req, res) => {
   const {
     userId,
@@ -3125,10 +3184,20 @@ export const getRoleBasedTasks = handleAsync(async (req, res) => {
         andConditions.push({
           status: { $in: ["Pending", "Delayed", "Overdue"] },
           taskType: "DelegationTask",
-          startDate: { $gte: todayStart, $lte: todayEnd },
+          dueDate: { $gte: todayStart, $lte: todayEnd }, // 🟢 dueDate se filter
         });
       }
-      if (taskCategory === "upcoming") query.status = "Upcoming";
+      if (taskCategory === "upcoming") {
+        andConditions.push({
+          $or: [
+            { status: "Upcoming" },
+            {
+              dueDate: { $gt: todayEnd },
+              status: { $nin: ["Completed", "Stopped", "Not Done"] },
+            },
+          ],
+        });
+      }
       if (taskCategory === "completed") query.status = "Completed";
     }
 
@@ -3264,11 +3333,20 @@ export const getRoleBasedTasks = handleAsync(async (req, res) => {
       if (taskCategory === "today_backlog") {
         fmsAndConditions.push({
           status: { $in: ["Pending", "Delayed", "Overdue"] },
-          plannedStartDate: { $gte: todayStart, $lte: todayEnd },
+          plannedDueDate: { $gte: todayStart, $lte: todayEnd }, // 🟢 plannedDueDate se filter
         });
       }
-      if (taskCategory === "upcoming")
-        fmsAndConditions.push({ status: "Upcoming" });
+      if (taskCategory === "upcoming") {
+        fmsAndConditions.push({
+          $or: [
+            { status: "Upcoming" },
+            {
+              plannedDueDate: { $gt: todayEnd },
+              status: { $nin: ["Completed", "Stopped", "Not Done"] },
+            },
+          ],
+        });
+      }
       if (taskCategory === "completed")
         fmsAndConditions.push({ status: "Completed" });
     }
@@ -3542,10 +3620,20 @@ export const exportRoleBasedTasks = handleAsync(async (req, res) => {
         andConditions.push({
           status: { $in: ["Pending", "Delayed", "Overdue"] },
           taskType: "DelegationTask",
-          startDate: { $gte: todayStart, $lte: todayEnd },
+          dueDate: { $gte: todayStart, $lte: todayEnd }, // 🟢 dueDate se filter
         });
       }
-      if (taskCategory === "upcoming") query.status = "Upcoming";
+      if (taskCategory === "upcoming") {
+        andConditions.push({
+          $or: [
+            { status: "Upcoming" },
+            {
+              dueDate: { $gt: todayEnd },
+              status: { $nin: ["Completed", "Stopped", "Not Done"] },
+            },
+          ],
+        });
+      }
       if (taskCategory === "completed") query.status = "Completed";
     }
 
@@ -3686,11 +3774,20 @@ export const exportRoleBasedTasks = handleAsync(async (req, res) => {
       if (taskCategory === "today_backlog") {
         fmsAndConditions.push({
           status: { $in: ["Pending", "Delayed", "Overdue"] },
-          plannedStartDate: { $gte: todayStart, $lte: todayEnd },
+          plannedDueDate: { $gte: todayStart, $lte: todayEnd }, // 🟢 plannedDueDate se filter
         });
       }
-      if (taskCategory === "upcoming")
-        fmsAndConditions.push({ status: "Upcoming" });
+      if (taskCategory === "upcoming") {
+        fmsAndConditions.push({
+          $or: [
+            { status: "Upcoming" },
+            {
+              plannedDueDate: { $gt: todayEnd },
+              status: { $nin: ["Completed", "Stopped", "Not Done"] },
+            },
+          ],
+        });
+      }
       if (taskCategory === "completed")
         fmsAndConditions.push({ status: "Completed" });
     }
@@ -3778,7 +3875,7 @@ export const exportRoleBasedTasks = handleAsync(async (req, res) => {
     "Start Date",
     "Due Date",
     "Completed At",
-    "Created At",
+    // "Created At",
   ];
 
   let csvContent = "";
@@ -3814,9 +3911,9 @@ export const exportRoleBasedTasks = handleAsync(async (req, res) => {
       "Completed At": item.completedAt
         ? new Date(item.completedAt).toLocaleDateString("en-IN")
         : "-",
-      "Created At": item.createdAt
-        ? new Date(item.createdAt).toLocaleDateString("en-IN")
-        : "-",
+      // "Created At": item.createdAt
+      //   ? new Date(item.createdAt).toLocaleDateString("en-IN")
+      //   : "-",
     }));
 
     const worksheet = XLSX.utils.json_to_sheet(rows);
@@ -3976,12 +4073,26 @@ export const getAllTasks = handleAsync(async (req, res, next) => {
 
   let finalQuery = filterQuery;
 
-  if (search) {
-    const trimmedSearch = search.trim();
+  if (search && search.trim()) {
+    // 1. Regex special characters ko escape karein
+    const escapedSearch = search.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
     const searchQuery = {
       $or: [
-        { title: { $regex: trimmedSearch, $options: "i" } },
-        { TaskId: { $regex: trimmedSearch, $options: "i" } }, // 🟢 Partial match fix
+        { title: { $regex: escapedSearch, $options: "i" } },
+        { description: { $regex: escapedSearch, $options: "i" } },
+        { TaskId: { $regex: escapedSearch, $options: "i" } },
+        { taskId: { $regex: escapedSearch, $options: "i" } },
+        // 2. Agar TaskId DB mein Number type mein stored ho to string mein convert karke match karein
+        {
+          $expr: {
+            $regexMatch: {
+              input: { $toString: { $ifNull: ["$TaskId", ""] } },
+              regex: escapedSearch,
+              options: "i",
+            },
+          },
+        },
       ],
     };
 
@@ -4202,10 +4313,7 @@ export const toggleTaskCompletion = handleAsync(async (req, res, next) => {
       );
 
       if (bucket?.createdBy?._id) {
-        recipientsMap.set(
-          bucket.createdBy._id.toString(),
-          bucket.createdBy,
-        );
+        recipientsMap.set(bucket.createdBy._id.toString(), bucket.createdBy);
       }
     }
 
@@ -5921,3 +6029,170 @@ export const updateRecurringGeneratedTaskAssignee = async ({
     console.error("❌ updateRecurringGeneratedTaskAssignee Error:", error);
   }
 };
+
+const parseSheetDateOnly = (rawDate) => {
+  if (!rawDate) return null;
+
+  // Excel serial number handle karne ke liye
+  if (typeof rawDate === "number") {
+    const parsed = XLSX.SSF.parse_date_code(rawDate);
+    if (!parsed) return null;
+    const yyyy = String(parsed.y).padStart(4, "0");
+    const mm = String(parsed.m).padStart(2, "0");
+    const dd = String(parsed.d).padStart(2, "0");
+    return new Date(`${yyyy}-${mm}-${dd}T00:00:00.000+05:30`);
+  }
+
+  // String jaise "2026-11-26 09" me se sirf "2026-11-26" nikalein
+  const datePart = String(rawDate).trim().split(/[\sT]+/)[0];
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(datePart)) return null;
+
+  // IST 00:00:00 ke hisab se Date object (agar UTC chahiye to "+05:30" ki jagah "Z" kar dein)
+  const dt = new Date(`${datePart}T00:00:00.000+05:30`);
+  return Number.isNaN(dt.getTime()) ? null : dt;
+};
+
+export const matchAndUpdateNov4Tasks = handleAsync(async (req, res, next) => {
+  if (!req.file || !req.file.path) {
+    return next(new AppError("Please upload a CSV or Excel sheet", 400));
+  }
+
+  // 1. File read aur cleanup
+  const fileBuffer = fs.readFileSync(req.file.path);
+  const workbook = XLSX.read(fileBuffer, { type: "buffer" });
+
+  if (fs.existsSync(req.file.path)) {
+    fs.unlinkSync(req.file.path);
+  }
+
+  const sheetName = workbook.SheetNames?.[0];
+  if (!sheetName) {
+    return next(new AppError("Uploaded file has no sheets", 400));
+  }
+
+  const sheetRows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
+
+  // 2. MongoDB se 04 Nov 2026 ke Recurring Tasks nikalein
+  const dbTasks = await Task.aggregate([
+    {
+      $match: {
+        taskType: "RecurringTask",
+        frequency: { $nin: ["Daily", "Weekly", "Bi-weekly"] },
+        startDate: {
+          $gte: new Date("2026-11-03T18:30:00.000Z"),
+          $lte: new Date("2026-11-04T18:29:59.999Z"),
+        },
+      },
+    },
+    {
+      $lookup: {
+        from: "users",
+        localField: "assignedTo",
+        foreignField: "_id",
+        as: "doer",
+      },
+    },
+    {
+      $unwind: {
+        path: "$doer",
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+    {
+      $project: {
+        _id: 1,
+        TaskId: 1,
+        title: 1,
+        startDate: 1,
+        endDate: 1,
+        taskType: 1,
+        frequency: 1,
+        assignedToName: "$doer.name",
+        employeeCode: "$doer.employeeCode",
+      },
+    },
+  ]);
+
+  const normalizeFreq = (f) =>
+    String(f || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[-\s]/g, "");
+
+  const sheetMap = new Map();
+  for (const row of sheetRows) {
+    const id = String(row.taskid || "").trim();
+    if (id) {
+      sheetMap.set(id, row);
+    }
+  }
+
+  const bulkOps = [];
+  const updatedLogs = [];
+  const skippedNoValidDate = [];
+
+  for (const task of dbTasks) {
+    const dbTaskId = String(task.TaskId || "").trim();
+    const sheetRow = sheetMap.get(dbTaskId);
+    if (!sheetRow) continue;
+
+    const freqMatch =
+      normalizeFreq(task.frequency) === normalizeFreq(sheetRow.frequency);
+    const userMatch =
+      String(task.employeeCode || "").trim() ===
+      String(sheetRow.task_asign_to || "").trim();
+
+    // Sirf Exact Match wale tasks ko update karein
+    if (freqMatch && userMatch) {
+      const parsedStartDate = parseSheetDateOnly(sheetRow.start_date);
+
+      if (!parsedStartDate) {
+        skippedNoValidDate.push({
+          dbTaskId,
+          rawSheetStartDate: sheetRow.start_date ?? null,
+          reason: "Invalid or empty start_date in sheet",
+        });
+        continue;
+      }
+
+      // Sirf startDate update karein (endDate aur baaki saari fields untouched rahengi)
+      bulkOps.push({
+        updateOne: {
+          filter: { _id: task._id },
+          update: {
+            $set: {
+              startDate: parsedStartDate,
+            },
+          },
+        },
+      });
+
+      updatedLogs.push({
+        dbTaskId,
+        title: task.title,
+        oldStartDate: task.startDate,
+        rawSheetStartDate: sheetRow.start_date,
+        newStartDate: parsedStartDate,
+        endDate: task.endDate ?? null,
+      });
+    }
+  }
+
+  let modifiedCount = 0;
+  if (bulkOps.length > 0) {
+    const bulkResult = await Task.bulkWrite(bulkOps);
+    modifiedCount = bulkResult.modifiedCount;
+  }
+
+  res.status(200).json({
+    success: true,
+    summary: {
+      totalDbTasksChecked: dbTasks.length,
+      exactMatchedQueued: bulkOps.length,
+      dbModifiedCount: modifiedCount,
+      skippedNoValidDateCount: skippedNoValidDate.length,
+    },
+    updatedTasks: updatedLogs,
+    skippedNoValidDate,
+  });
+});

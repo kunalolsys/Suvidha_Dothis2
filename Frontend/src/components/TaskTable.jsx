@@ -725,23 +725,47 @@ const TaskTable = ({
     await handleToggleComplete(selectedTaskForChecklist);
     setIsChecklistDialogOpen(false);
   };
-
   const handleExport = async () => {
     try {
-      const response = await api.post("/tasks/export", {
-        tabType: activeTabForExport,
-        assignedTo: selectedFilterUser,
-        status: selectedFilterStatus,
-        search: debouncedSearch,
-        responseType: "blob",
-      });
-      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const response = await api.post(
+        "/tasks/export",
+        {
+          tabType: activeTabForExport,
+          assignedTo: selectedFilterUser,
+          status: selectedFilterStatus,
+          search: debouncedSearch,
+        },
+        {
+          responseType: "blob",
+        },
+      );
+
+      // Blob ko text me padh kar dates ke saath aane wala time hatayein
+      const rawCsv = await response.data.text();
+
+      const cleanedCsv = rawCsv
+        // ISO datetime (e.g. 2026-11-17T10:57:00.000Z -> 2026-11-17)
+        .replace(
+          /(\b\d{4}-\d{2}-\d{2})[T\s]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?Z?\b/gi,
+          "$1",
+        )
+        // Locale datetime (e.g. 17/11/2026, 10:57:00 am ya 17-11-2026 10:57 PM -> 17/11/2026)
+        .replace(
+          /(\b\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})[,\s]+\d{1,2}:\d{2}(?::\d{2})?(?:\s*[aApP][mM])?\b/g,
+          "$1",
+        );
+
+      const url = window.URL.createObjectURL(
+        new Blob([cleanedCsv], { type: "text/csv;charset=utf-8;" }),
+      );
       const link = document.createElement("a");
       link.href = url;
       link.setAttribute("download", "tasks.csv");
       document.body.appendChild(link);
       link.click();
       link.remove();
+      window.URL.revokeObjectURL(url);
+
       toast.success("Tasks exported successfully.");
     } catch (error) {
       console.error("Export error:", error);
@@ -1012,13 +1036,13 @@ const TaskTable = ({
     { key: "status", label: "Status", visible: true },
     { key: "action", label: "Action", visible: true },
   ];
-
   const recurringDefaultColumns = [
     { key: "sr", label: "Sr.", visible: true },
     { key: "taskId", label: "Task ID", visible: true },
     { key: "title", label: "Title", visible: true },
     { key: "description", label: "Description", visible: true },
     { key: "frequency", label: "Frequency", visible: true },
+    { key: "monthlySchedule", label: "Monthly Schedule", visible: true },
     { key: "weekDays", label: "Week Days", visible: true },
     { key: "startDate", label: "Start Date", visible: true },
     { key: "endDate", label: "End Date", visible: true },
@@ -1036,7 +1060,23 @@ const TaskTable = ({
 
   const [recurringColumns, setRecurringColumns] = useState(() => {
     const saved = localStorage.getItem("recurringTaskColumns");
-    return saved ? JSON.parse(saved) : recurringDefaultColumns;
+    if (!saved) return recurringDefaultColumns;
+
+    const parsed = JSON.parse(saved);
+    const hasMonthlySchedule = parsed.some(
+      (col) => col.key === "monthlySchedule",
+    );
+    if (hasMonthlySchedule) return parsed;
+
+    // Purane saved columns mein frequency ke baad monthlySchedule inject karein
+    const freqIdx = parsed.findIndex((col) => col.key === "frequency");
+    const updated = [...parsed];
+    updated.splice(freqIdx + 1, 0, {
+      key: "monthlySchedule",
+      label: "Monthly Schedule",
+      visible: true,
+    });
+    return updated;
   });
 
   const activeColumns = useMemo(() => {
@@ -1313,7 +1353,7 @@ const TaskTable = ({
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button>
-                    <UploadCloud className="mr-2 h-4 w-4" /> Import Tasks
+                    <UploadCloud className="mr-2 h-4 w-8" /> Import Tasks
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent>
@@ -1635,10 +1675,7 @@ const TaskTable = ({
                             ?.visible && (
                             <TableCell className="whitespace-nowrap">
                               {task.dueDate
-                                ? format(
-                                    new Date(task.dueDate),
-                                    "dd MMM yyyy",
-                                  )
+                                ? format(new Date(task.dueDate), "dd MMM yyyy")
                                 : "-"}
                             </TableCell>
                           )}
@@ -1999,6 +2036,25 @@ const TaskTable = ({
                               </Badge>
                             </TableCell>
                           )}
+                          {recurringColumns.find(
+                            (c) => c.key === "monthlySchedule",
+                          )?.visible && (
+                            <TableCell className="whitespace-nowrap">
+                              {task.frequency?.toLowerCase() === "monthly" &&
+                              task.monthlyScheduleType === "week" &&
+                              task.monthlyOccurrence &&
+                              task.monthlyWeekDay ? (
+                                <Badge
+                                  variant="outline"
+                                  className="bg-indigo-50 text-indigo-700 border-indigo-200 capitalize"
+                                >
+                                  {`${task.monthlyOccurrence} ${task.monthlyWeekDay}`}
+                                </Badge>
+                              ) : (
+                                <span className="text-gray-400">-</span>
+                              )}
+                            </TableCell>
+                          )}
                           {recurringColumns.find((c) => c.key === "weekDays")
                             ?.visible && (
                             <TableCell>
@@ -2046,10 +2102,7 @@ const TaskTable = ({
                             ?.visible && (
                             <TableCell className="whitespace-nowrap">
                               {task.endDate
-                                ? format(
-                                    new Date(task.endDate),
-                                    "dd MMM yyyy",
-                                  )
+                                ? format(new Date(task.endDate), "dd MMM yyyy")
                                 : "-"}
                             </TableCell>
                           )}

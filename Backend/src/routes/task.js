@@ -22,6 +22,7 @@ import {
   getFMSTaskStats,
   exportMYFMSTasks,
   exportRoleBasedTasks,
+  matchAndUpdateNov4Tasks,
 } from '../controllers/taskController.js';
 import { reopenTask } from '../controllers/taskReopenController.js';
 
@@ -407,5 +408,9 @@ router.post('/fix-delegation-dates', async (req, res) => {
     });
   }
 });
-
+router.post(
+  "/debug/match-nov4-sheet",
+  upload.single("file"),
+  matchAndUpdateNov4Tasks,
+);
 export default router;

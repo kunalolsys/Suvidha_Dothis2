@@ -1199,7 +1199,7 @@ const PCView = () => {
             <span className="text-sm font-medium text-gray-900">
               {task.assignedBy?.name || "-"}
             </span>
-            {assignedByUser?.name && (
+            {/* {assignedByUser?.name && (
               <span
                 className={`text-xs px-2 py-0.5 rounded-full w-fit font-medium ${
                   assignedByUser.role?.name === "admin"
@@ -1215,7 +1215,7 @@ const PCView = () => {
               >
                 {assignedByUser.role?.name}
               </span>
-            )}
+            )} */}
           </div>
         </TableCell>
         <TableCell>
@@ -1224,7 +1224,7 @@ const PCView = () => {
               {task.assignedTo?.name || "-"}
             </span>
 
-            {assignedToUser?.name && (
+            {/* {assignedToUser?.name && (
               <span
                 className={`text-xs px-2 py-0.5 rounded-full w-fit font-medium ${
                   assignedToUser.role?.name === "admin"
@@ -1240,7 +1240,7 @@ const PCView = () => {
               >
                 {assignedToUser.role?.name}
               </span>
-            )}
+            )} */}
           </div>
         </TableCell>
         <TableCell>
