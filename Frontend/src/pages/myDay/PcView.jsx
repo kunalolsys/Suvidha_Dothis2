@@ -424,7 +424,7 @@ const FilterBar = ({
 
       <div className="flex flex-col sm:flex-row gap-2 flex-[2]">
         {/* All Sr. Managers Filter */}
-        <Select
+        {/* <Select
           value={selectedSrManager}
           onValueChange={(val) => handleFilterChange(setSelectedSrManager, val)}
         >
@@ -441,10 +441,10 @@ const FilterBar = ({
               </SelectItem>
             ))}
           </SelectContent>
-        </Select>
+        </Select> */}
 
         {/* All Managers Filter */}
-        <Select
+        {/* <Select
           value={selectedManager}
           onValueChange={(val) => handleFilterChange(setSelectedManager, val)}
         >
@@ -461,7 +461,7 @@ const FilterBar = ({
               </SelectItem>
             ))}
           </SelectContent>
-        </Select>
+        </Select> */}
 
         {/* All Doers Filter */}
         <AntdSelect
@@ -1450,7 +1450,7 @@ const PCView = () => {
               showExport={true}
               onExport={handleExport}
               isExporting={isExporting}
-              doers={doers}
+              doers={allUsers}
               selectedDoer={selectedDoer}
               setSelectedDoer={setSelectedDoer}
               managers={managers}

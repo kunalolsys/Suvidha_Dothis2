@@ -23,6 +23,7 @@ import {
 } from "../utils/fmsDateCalculator.js";
 import Role from "../models/Role.js";
 import { sendNotificationAlert } from "../utils/notificationHelper.js";
+import { handleAsync } from "../utils/handleAsync.js";
 
 // =======================================================
 // CREATE BUCKET TASK
@@ -1345,7 +1346,6 @@ export const completeTaskBucket = async (req, res) => {
         actor: completedUser,
         userId: creator._id,
       });
-
     }
 
     // =====================================================
@@ -1815,3 +1815,41 @@ export const updateTaskBucket = async (req, res) => {
     });
   }
 };
+export const getUndistributedTaskBuckets = handleAsync(async (req, res) => {
+  const { search = "", includePartial = "true" } = req.query;
+
+  const allowedDistributionStatuses =
+    String(includePartial).toLowerCase() === "false"
+      ? ["Pending"]
+      : ["Pending", "Partially Distributed"];
+
+  const filter = {
+    isDeleted: { $ne: true },
+    status: { $ne: "Completed" },
+    distributionStatus: { $in: allowedDistributionStatuses },
+  };
+
+  if (search && String(search).trim() !== "") {
+    const keyword = String(search).trim();
+    filter.$or = [
+      { bucketId: { $regex: keyword, $options: "i" } },
+      { title: { $regex: keyword, $options: "i" } },
+    ];
+  }
+
+  const buckets = await TaskBucket.find(filter)
+    .select(
+      "bucketId title description status distributionStatus assignmentMode targetRole targetUsers startDate taskEndDays isRecurrent frequency createdBy createdAt",
+    )
+    .populate("createdBy", "name employeeCode")
+    .populate("targetRole", "name displayName")
+    .populate("targetUsers", "name employeeCode")
+    .sort({ createdAt: -1 })
+    .lean();
+
+  return res.status(200).json({
+    success: true,
+    count: buckets.length,
+    data: buckets,
+  });
+});

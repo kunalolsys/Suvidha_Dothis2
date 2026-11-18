@@ -10,6 +10,11 @@ import {
   ListChecks,
   CheckCircle,
   AlertCircle,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "react-router-dom";
@@ -100,7 +105,14 @@ const Users = () => {
   const [selectedRole, setSelectedRole] = useState("all");
   const [selectedShift, setSelectedShift] = useState("all");
   const debouncedSearch = useDebounce(searchTerm, 500);
+  const [sortBy, setSortBy] = useState("name");
+  const [sortOrder, setSortOrder] = useState("asc");
 
+  const handleNameSort = () => {
+    setSortBy("name");
+    setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
+    setPage(1); // Sort change par page 1 par reset karein
+  };
   useEffect(() => {
     dispatch(
       fetchUsers({
@@ -110,6 +122,8 @@ const Users = () => {
         selectedDepartment,
         selectedShift,
         debouncedSearch,
+        sortBy,
+        sortOrder,
       }),
     );
     dispatch(fetchDepartments());
@@ -123,6 +137,8 @@ const Users = () => {
     selectedDepartment,
     selectedShift,
     debouncedSearch,
+    sortBy,
+    sortOrder,
   ]);
 
   useEffect(() => {
@@ -202,6 +218,8 @@ const Users = () => {
               selectedDepartment,
               selectedShift,
               debouncedSearch,
+              sortBy,
+              sortOrder,
             }),
           );
         } catch (err) {
@@ -303,6 +321,8 @@ const Users = () => {
             selectedDepartment,
             selectedShift,
             debouncedSearch,
+            sortBy,
+            sortOrder,
           }),
         );
 
@@ -559,13 +579,54 @@ const Users = () => {
           <Table>
             <TableHeader>
               <TableRow>
-                {/* <TableHead>Sr. No.</TableHead> */}
                 <TableHead>Employee Code</TableHead>
-                <TableHead>Name</TableHead>
+
+                {/* Clickable Name Column with Server-Side Asc/Desc Sort */}
+                <TableHead
+                  onClick={handleNameSort}
+                  className="cursor-pointer select-none group hover:bg-slate-100/80 transition-colors"
+                >
+                  <div className="inline-flex items-center gap-2 py-1">
+                    <span className="font-semibold text-gray-800 group-hover:text-blue-600 transition-colors">
+                      Name
+                    </span>
+
+                    {/* A-Z / Z-A Pill Badge */}
+                    <span
+                      className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md border transition-all ${
+                        sortBy === "name"
+                          ? "bg-blue-50 text-blue-600 border-blue-200"
+                          : "bg-gray-50 text-gray-400 border-gray-200 group-hover:text-gray-600"
+                      }`}
+                    >
+                      {sortBy === "name" && sortOrder === "desc"
+                        ? "Z-A"
+                        : "A-Z"}
+                    </span>
+
+                    {/* Stacked Up/Down Arrows */}
+                    <span className="flex flex-col -space-y-1.5">
+                      <ChevronUp
+                        className={`h-3.5 w-3.5 transition-colors ${
+                          sortBy === "name" && sortOrder === "asc"
+                            ? "text-blue-600 stroke-[2.75]"
+                            : "text-gray-300 group-hover:text-gray-400"
+                        }`}
+                      />
+                      <ChevronDown
+                        className={`h-3.5 w-3.5 transition-colors ${
+                          sortBy === "name" && sortOrder === "desc"
+                            ? "text-blue-600 stroke-[2.75]"
+                            : "text-gray-300 group-hover:text-gray-400"
+                        }`}
+                      />
+                    </span>
+                  </div>
+                </TableHead>
+
                 <TableHead>Phone</TableHead>
                 <TableHead>Email</TableHead>
                 <TableHead>Department(s)</TableHead>
-                {/* <TableHead>Reporting Manager</TableHead> */}
                 <TableHead>Primary Role</TableHead>
                 <TableHead>Shifts</TableHead>
                 <TableHead>Telegram Notification</TableHead>
@@ -614,7 +675,7 @@ const Users = () => {
                     </TableCell>{" "}
                     <TableCell>{user.telegramUserName || "-"}</TableCell>
                     {(canUpdate || canDelete) && (
-                      <TableCell className="flex gap-1">
+                      <TableCell className="text-right">
                         {canUpdate && (
                           <Link to={`/setup/edit-user/${user._id}`}>
                             <Button
@@ -626,7 +687,7 @@ const Users = () => {
                             </Button>
                           </Link>
                         )}
-                        {canDelete && (
+                        {/* {canDelete && (
                           <Button
                             variant="ghost"
                             size="icon"
@@ -635,7 +696,7 @@ const Users = () => {
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
-                        )}
+                        )} */}
                       </TableCell>
                     )}
                   </TableRow>

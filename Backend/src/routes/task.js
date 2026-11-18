@@ -23,6 +23,11 @@ import {
   exportMYFMSTasks,
   exportRoleBasedTasks,
   matchAndUpdateNov4Tasks,
+  logNov4MonthlyRecurringTasks,
+  updateMonthlyWeekWiseFromSheet,
+  updateRecurringTaskAssigneesFromSheet,
+  updateDelegationTaskAssigneesFromSheet,
+  hideTasksOfDeletedUsers,
 } from '../controllers/taskController.js';
 import { reopenTask } from '../controllers/taskReopenController.js';
 
@@ -413,4 +418,21 @@ router.post(
   upload.single("file"),
   matchAndUpdateNov4Tasks,
 );
+router.get("/preview-nov4-monthly-recurring", logNov4MonthlyRecurringTasks);
+router.post(
+  "/update-monthly-weekwise-sheet",
+  upload.single("file"), // apna existing multer middleware use karein
+  updateMonthlyWeekWiseFromSheet,
+);
+router.post(
+  "/update-recurring-assignees-sheet",
+  upload.single("file"),
+  updateRecurringTaskAssigneesFromSheet,
+);
+router.post(
+  "/update-delegation-assignees-sheet",
+  upload.single("file"),
+  updateDelegationTaskAssigneesFromSheet,
+);
+router.patch("/hide-deleted-users-tasks", hideTasksOfDeletedUsers);
 export default router;

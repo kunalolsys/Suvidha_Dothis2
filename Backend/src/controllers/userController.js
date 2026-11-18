@@ -42,23 +42,22 @@ export const getAllUsers = handleAsync(async (req, res, next) => {
     department,
     assignShift,
     search,
+    sortBy = "name",     // default: "name" (ya "createdAt" rakh sakte hain)
+    sortOrder = "asc",   // "asc" | "desc"
   } = req.body;
 
   const filter = { isDeleted: { $ne: true } };
 
-  // ✅ Active filter
   if (active === true || active === "true") {
     filter.isActive = true;
   }
 
-  // ✅ Manager + subordinates filter
   if (managerId) {
     const subordinateIds = await getAllSubordinates(managerId);
     subordinateIds.push(managerId);
     filter._id = { $in: subordinateIds };
   }
 
-  // ✅ SEARCH FILTER
   if (search) {
     filter.$or = [
       { name: { $regex: search, $options: "i" } },
@@ -67,44 +66,43 @@ export const getAllUsers = handleAsync(async (req, res, next) => {
     ];
   }
 
-  // 🟢 ROLE FILTER FIX
   const superRole = await Role.findOne({ name: "Super" }).select("_id");
-
   if (role) {
     filter.role = role;
   } else if (superRole) {
     filter.role = { $ne: superRole._id };
   }
 
-  // ✅ Department filter
   if (department) {
-    if (Array.isArray(department)) {
-      filter.department = { $in: department };
-    } else {
-      filter.department = department;
-    }
+    filter.department = Array.isArray(department)
+      ? { $in: department }
+      : department;
   }
 
-  // ✅ Assign Shift filter
   if (assignShift) {
     filter.assignShift = assignShift;
   }
 
   const total = await User.countDocuments(filter);
 
-  // 🟢 SEARCH PAGE BUG FIX: Agar calculated skip total results se zyada ho to page = 1 kar do
   let currentSkip = (Number(page) - 1) * Number(limit);
   if (currentSkip >= total && total > 0) {
     page = 1;
     currentSkip = 0;
   }
 
+  // ✅ Allowed sort fields & direction
+  const allowedSortFields = ["name", "email", "employeeCode", "createdAt"];
+  const sortField = allowedSortFields.includes(sortBy) ? sortBy : "name";
+  const sortDirection = String(sortOrder).toLowerCase() === "desc" ? -1 : 1;
+
   const users = await User.find(filter, "-password")
+    .collation({ locale: "en", strength: 2 }) // Case-insensitive A-Z / Z-A sorting
     .populate("department", "name")
     .populate("reportingManager", "name")
     .populate("role", "name displayName")
     .populate("assignShift")
-    .sort({ createdAt: -1 })
+    .sort({ [sortField]: sortDirection })
     .skip(currentSkip)
     .limit(Number(limit))
     .lean();

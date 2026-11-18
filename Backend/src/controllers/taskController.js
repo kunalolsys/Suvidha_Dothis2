@@ -6196,3 +6196,526 @@ export const matchAndUpdateNov4Tasks = handleAsync(async (req, res, next) => {
     skippedNoValidDate,
   });
 });
+
+export const logNov4MonthlyRecurringTasks = handleAsync(async (req, res) => {
+  // Target date: 4 Nov (default 2026 ya query param ?date=2026-11-04 se override kar sakte hain)
+  const targetDateStr = req.query.date || "2026-11-04";
+  const targetIST = moment.tz(targetDateStr, "YYYY-MM-DD", "Asia/Kolkata");
+
+  const startOfDayIST = targetIST.clone().startOf("day").toDate();
+  const endOfDayIST = targetIST.clone().endOf("day").toDate();
+
+  // 1. Fetch all active Monthly RecurringTasks
+  const monthlyRecurringTasks = await RecurringTask.find({
+    taskType: "RecurringTask",
+    // frequency: "Monthly",
+    isDeleted: { $ne: true },
+  })
+    .populate("assignedTo", "name email")
+    .populate("assignedBy", "name email")
+    .populate("departmentOfAssignToUser", "name")
+    .lean();
+
+  // 2. Filter tasks jinki startDate 4 Nov ko hai (ya har mahine ki 4 tarikh ko due hain)
+  const matchedTasks = monthlyRecurringTasks.filter((task) => {
+    if (!task.startDate) return false;
+
+    const taskStartIST = moment(task.startDate).tz("Asia/Kolkata");
+
+    // Exact 4 Nov date match (startDate 4 Nov ho)
+    const isExact4Nov =
+      taskStartIST.date() === targetIST.date() &&
+      taskStartIST.month() === targetIST.month() &&
+      taskStartIST.year() === targetIST.year();
+
+    // Ya agar endDate 4 Nov ko ho
+    const taskEndIST = task.endDate
+      ? moment(task.endDate).tz("Asia/Kolkata")
+      : null;
+    const isEnd4Nov =
+      taskEndIST &&
+      taskEndIST.date() === targetIST.date() &&
+      taskEndIST.month() === targetIST.month() &&
+      taskEndIST.year() === targetIST.year();
+
+    return isExact4Nov || isEnd4Nov;
+  });
+
+  // 3. Console Logs (Dry-Run / Audit Log)
+  console.log("==================================================");
+  console.log(`📋 LOG ONLY: Monthly Recurring Tasks for ${targetDateStr} (IST)`);
+  console.log(`Total Monthly Recurring Tasks Checked: ${monthlyRecurringTasks.length}`);
+  console.log(`Matched 4 Nov Monthly Recurring Tasks: ${matchedTasks.length}`);
+  console.log("--------------------------------------------------");
+
+  const logSummary = matchedTasks.map((t, idx) => {
+    const entry = {
+      sr: idx + 1,
+      _id: t._id,
+      TaskId: t.TaskId,
+      title: t.title,
+      taskType: t.taskType,
+      frequency: t.frequency,
+      monthlyScheduleType: t.monthlyScheduleType || "date",
+      assignedTo: t.assignedTo?.name || t.assignedTo || "-",
+      department: t.departmentOfAssignToUser?.name || "-",
+      startDateIST: t.startDate
+        ? moment(t.startDate).tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss")
+        : null,
+      endDateIST: t.endDate
+        ? moment(t.endDate).tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss")
+        : null,
+      status: t.status,
+    };
+
+    console.log(
+      `[${entry.sr}] ${entry.TaskId} | "${entry.title}" | User: ${entry.assignedTo} | Start: ${entry.startDateIST} | End: ${entry.endDateIST}`,
+    );
+
+    return entry;
+  });
+
+  console.log("==================================================");
+
+  return res.status(200).json({
+    success: true,
+    mode: "LOG_ONLY",
+    targetDate: targetDateStr,
+    windowIST: {
+      start: startOfDayIST,
+      end: endOfDayIST,
+    },
+    totalChecked: monthlyRecurringTasks.length,
+    matchedCount: logSummary.length,
+    data: logSummary,
+  });
+});
+const xlsxLib = XLSX.default || XLSX;
+
+const VALID_OCCURRENCES = ["first", "second", "third", "fourth", "last"];
+const VALID_WEEK_DAYS = [
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+  "sunday",
+];
+
+// POST /api/tasks/update-monthly-weekwise-sheet
+export const updateMonthlyWeekWiseFromSheet = handleAsync(
+  async (req, res, next) => {
+    if (!req.file) {
+      return next(new AppError("Please upload an Excel or CSV file", 400));
+    }
+
+    // Read file buffer via fs (works cleanly in ESM with memoryStorage or diskStorage)
+    const fileBuffer = req.file.buffer || fs.readFileSync(req.file.path);
+    const workbook = xlsxLib.read(fileBuffer, { type: "buffer" });
+
+    const sheetName = workbook.SheetNames[0];
+    const rows = xlsxLib.utils.sheet_to_json(workbook.Sheets[sheetName], {
+      defval: "",
+    });
+
+    if (!rows.length) {
+      return next(new AppError("Uploaded sheet is empty", 400));
+    }
+
+    const bulkOps = [];
+    const skippedRows = [];
+
+    for (const [index, row] of rows.entries()) {
+      const taskId = String(row.taskid || row.TaskId || "").trim();
+      const occurrenceRaw = String(row.occurrence || "").trim().toLowerCase();
+      const occurDayRaw = String(row.occurday || "").trim().toLowerCase();
+
+      if (!taskId) {
+        skippedRows.push({ row: index + 2, reason: "Missing taskid" });
+        continue;
+      }
+
+      if (!VALID_OCCURRENCES.includes(occurrenceRaw)) {
+        skippedRows.push({
+          row: index + 2,
+          taskId,
+          reason: `Invalid occurrence: "${row.occurrence}"`,
+        });
+        continue;
+      }
+
+      if (!VALID_WEEK_DAYS.includes(occurDayRaw)) {
+        skippedRows.push({
+          row: index + 2,
+          taskId,
+          reason: `Invalid occurday: "${row.occurday}"`,
+        });
+        continue;
+      }
+
+      bulkOps.push({
+        updateOne: {
+          filter: {
+            TaskId: taskId,
+            taskType: "RecurringTask",
+            isDeleted: { $ne: true },
+          },
+          update: {
+            $set: {
+              monthlyScheduleType: "week",
+              monthlyOccurrence: occurrenceRaw,
+              monthlyWeekDay: occurDayRaw,
+              startDate: null,
+              endDate: null,
+            },
+          },
+        },
+      });
+    }
+
+    // Optional: diskStorage ki temp file clean kar dein
+    if (req.file.path && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+
+    if (bulkOps.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "No valid rows found to update",
+        skippedRows,
+      });
+    }
+
+    const result = await RecurringTask.bulkWrite(bulkOps);
+
+    return res.status(200).json({
+      success: true,
+      message: "Monthly week-wise schedule updated successfully",
+      summary: {
+        totalSheetRows: rows.length,
+        validQueriesPrepared: bulkOps.length,
+        matchedInDB: result.matchedCount,
+        modifiedInDB: result.modifiedCount,
+        skippedCount: skippedRows.length,
+      },
+      skippedRows,
+    });
+  },
+);
+export const updateRecurringTaskAssigneesFromSheet = handleAsync(
+  async (req, res, next) => {
+    if (!req.file) {
+      return next(new AppError("Please upload a CSV or Excel file", 400));
+    }
+
+    // 1. Read file buffer safely in ESM
+    const fileBuffer = req.file.buffer || fs.readFileSync(req.file.path);
+    const workbook = xlsxLib.read(fileBuffer, { type: "buffer" });
+    const sheetName = workbook.SheetNames[0];
+    const rows = xlsxLib.utils.sheet_to_json(workbook.Sheets[sheetName], {
+      defval: "",
+    });
+
+    // Clean up temp disk file if present
+    if (req.file.path && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+
+    if (!rows.length) {
+      return next(new AppError("Uploaded sheet is empty", 400));
+    }
+
+    // 2. Load all users and map strictly by Employee Code
+    const allUsers = await User.find({ isDeleted: { $ne: true } })
+      .select("_id name employeeCode empCode employeeId")
+      .lean();
+
+    const userByEmpCode = new Map();
+    for (const u of allUsers) {
+      const code = u.employeeCode ?? u.empCode ?? u.employeeId;
+      if (code !== undefined && code !== null && String(code).trim() !== "") {
+        userByEmpCode.set(String(code).trim().toLowerCase(), u);
+      }
+    }
+
+    const bulkOps = [];
+    const skippedRows = [];
+    const unmatchedEmployeeCodes = [];
+
+    // 3. Process each row using strictly Employee Code
+    for (const [index, row] of rows.entries()) {
+      const rowNum = index + 2;
+      const taskId = String(row.taskid ?? row.TaskId ?? "").trim();
+      const rawAssignToCode = String(
+        row.assigned_to ?? row.task_asign_to ?? "",
+      ).trim();
+      const rawAssignByCode = String(
+        row.assigned_by ?? row.task_asign_by ?? "",
+      ).trim();
+
+      if (!taskId) {
+        skippedRows.push({ row: rowNum, reason: "Missing taskid" });
+        continue;
+      }
+
+      const updateFields = {};
+
+      if (rawAssignToCode && rawAssignToCode.toUpperCase() !== "NULL") {
+        const toUser = userByEmpCode.get(rawAssignToCode.toLowerCase());
+        if (toUser) {
+          updateFields.assignedTo = toUser._id;
+        } else {
+          unmatchedEmployeeCodes.push({
+            row: rowNum,
+            taskId,
+            field: "assigned_to",
+            employeeCode: rawAssignToCode,
+          });
+        }
+      }
+
+      if (rawAssignByCode && rawAssignByCode.toUpperCase() !== "NULL") {
+        const byUser = userByEmpCode.get(rawAssignByCode.toLowerCase());
+        if (byUser) {
+          updateFields.assignedBy = byUser._id;
+        } else {
+          unmatchedEmployeeCodes.push({
+            row: rowNum,
+            taskId,
+            field: "assigned_by",
+            employeeCode: rawAssignByCode,
+          });
+        }
+      }
+
+      if (Object.keys(updateFields).length === 0) {
+        skippedRows.push({
+          row: rowNum,
+          taskId,
+          reason: `Employee code not matched in DB (assigned_to: "${rawAssignToCode}", assigned_by: "${rawAssignByCode}")`,
+        });
+        continue;
+      }
+
+      bulkOps.push({
+        updateOne: {
+          filter: {
+            TaskId: taskId,
+            taskType: "RecurringTask",
+            isDeleted: { $ne: true },
+          },
+          update: {
+            $set: updateFields,
+          },
+        },
+      });
+    }
+
+    if (bulkOps.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "No valid rows matched by employee code",
+        unmatchedEmployeeCodes,
+        skippedRows,
+      });
+    }
+
+    // 4. Bulk update only assignedTo and/or assignedBy on RecurringTasks
+    const result = await RecurringTask.bulkWrite(bulkOps);
+
+    return res.status(200).json({
+      success: true,
+      message: "Recurring tasks assignedTo & assignedBy updated successfully",
+      summary: {
+        totalSheetRows: rows.length,
+        preparedUpdates: bulkOps.length,
+        matchedTasksInDB: result.matchedCount,
+        modifiedTasksInDB: result.modifiedCount,
+        skippedRowsCount: skippedRows.length,
+        unmatchedEmployeeCodesCount: unmatchedEmployeeCodes.length,
+      },
+      unmatchedEmployeeCodes,
+      skippedRows,
+    });
+  },
+);
+
+export const updateDelegationTaskAssigneesFromSheet = handleAsync(
+  async (req, res, next) => {
+    if (!req.file) {
+      return next(new AppError("Please upload a CSV or Excel file", 400));
+    }
+
+    // 1. Read file buffer safely in ESM
+    const fileBuffer = req.file.buffer || fs.readFileSync(req.file.path);
+    const workbook = xlsxLib.read(fileBuffer, { type: "buffer" });
+    const sheetName = workbook.SheetNames[0];
+    const rows = xlsxLib.utils.sheet_to_json(workbook.Sheets[sheetName], {
+      defval: "",
+    });
+
+    // Clean up temp disk file if present
+    if (req.file.path && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+
+    if (!rows.length) {
+      return next(new AppError("Uploaded sheet is empty", 400));
+    }
+
+    // 2. Load all users and map strictly by Employee Code
+    const allUsers = await User.find({ isDeleted: { $ne: true } })
+      .select("_id name employeeCode empCode employeeId")
+      .lean();
+
+    const userByEmpCode = new Map();
+    for (const u of allUsers) {
+      const code = u.employeeCode ?? u.empCode ?? u.employeeId;
+      if (code !== undefined && code !== null && String(code).trim() !== "") {
+        userByEmpCode.set(String(code).trim().toLowerCase(), u);
+      }
+    }
+
+    const bulkOps = [];
+    const skippedRows = [];
+    const unmatchedEmployeeCodes = [];
+
+    // 3. Process each row using strictly Employee Code
+    for (const [index, row] of rows.entries()) {
+      const rowNum = index + 2;
+      const taskId = String(row.taskid ?? row.TaskId ?? "").trim();
+      const rawAssignToCode = String(
+        row.assigned_to ?? row.task_asign_to ?? "",
+      ).trim();
+      const rawAssignByCode = String(
+        row.assigned_by ?? row.task_asign_by ?? "",
+      ).trim();
+
+      if (!taskId) {
+        skippedRows.push({ row: rowNum, reason: "Missing taskid" });
+        continue;
+      }
+
+      const updateFields = {};
+
+      if (rawAssignToCode && rawAssignToCode.toUpperCase() !== "NULL") {
+        const toUser = userByEmpCode.get(rawAssignToCode.toLowerCase());
+        if (toUser) {
+          updateFields.assignedTo = toUser._id;
+        } else {
+          unmatchedEmployeeCodes.push({
+            row: rowNum,
+            taskId,
+            field: "assigned_to",
+            employeeCode: rawAssignToCode,
+          });
+        }
+      }
+
+      if (rawAssignByCode && rawAssignByCode.toUpperCase() !== "NULL") {
+        const byUser = userByEmpCode.get(rawAssignByCode.toLowerCase());
+        if (byUser) {
+          updateFields.assignedBy = byUser._id;
+        } else {
+          unmatchedEmployeeCodes.push({
+            row: rowNum,
+            taskId,
+            field: "assigned_by",
+            employeeCode: rawAssignByCode,
+          });
+        }
+      }
+
+      if (Object.keys(updateFields).length === 0) {
+        skippedRows.push({
+          row: rowNum,
+          taskId,
+          reason: `Employee code not matched in DB (assigned_to: "${rawAssignToCode}", assigned_by: "${rawAssignByCode}")`,
+        });
+        continue;
+      }
+
+      bulkOps.push({
+        updateOne: {
+          filter: {
+            TaskId: taskId,
+            taskType: "DelegationTask",
+            isDeleted: { $ne: true },
+          },
+          update: {
+            $set: updateFields,
+          },
+        },
+      });
+    }
+
+    if (bulkOps.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "No valid rows matched by employee code",
+        unmatchedEmployeeCodes,
+        skippedRows,
+      });
+    }
+
+    // 4. Bulk update only assignedTo and/or assignedBy on DelegationTasks
+    const result = await DelegationTask.bulkWrite(bulkOps);
+
+    return res.status(200).json({
+      success: true,
+      message: "Delegation tasks assignedTo & assignedBy updated successfully",
+      summary: {
+        totalSheetRows: rows.length,
+        preparedUpdates: bulkOps.length,
+        matchedTasksInDB: result.matchedCount,
+        modifiedTasksInDB: result.modifiedCount,
+        skippedRowsCount: skippedRows.length,
+        unmatchedEmployeeCodesCount: unmatchedEmployeeCodes.length,
+      },
+      unmatchedEmployeeCodes,
+      skippedRows,
+    });
+  },
+);
+export const hideTasksOfDeletedUsers = handleAsync(async (req, res) => {
+  // 1. Fetch all active (non-deleted) user IDs and soft-deleted user IDs
+  const [activeUsers, deletedUsers] = await Promise.all([
+    User.find({ isDeleted: { $ne: true } }).select("_id").lean(),
+    User.find({ isDeleted: true }).select("_id").lean(),
+  ]);
+
+  const activeUserIds = activeUsers.map((u) => u._id);
+  const deletedUserIds = deletedUsers.map((u) => u._id);
+
+  // Condition: assignedTo soft-deleted user ho YA User collection me exist hi na karta ho
+  const filter = {
+    isVisible: { $ne: false },
+    $or: [
+      { assignedTo: { $in: deletedUserIds } },
+      { assignedTo: { $nin: activeUserIds, $ne: null } },
+    ],
+  };
+
+  // 2. Update both DelegationTask & RecurringTask in parallel
+  const [delegationRes, recurringRes] = await Promise.all([
+    DelegationTask.updateMany(filter, { $set: { isVisible: false } }),
+    RecurringTask.updateMany(filter, { $set: { isVisible: false } }),
+  ]);
+
+  return res.status(200).json({
+    success: true,
+    message: "Tasks assigned to deleted users have been hidden (isVisible: false)",
+    summary: {
+      deletedUsersCount: deletedUserIds.length,
+      delegationTasks: {
+        matched: delegationRes.matchedCount,
+        modified: delegationRes.modifiedCount,
+      },
+      recurringTasks: {
+        matched: recurringRes.matchedCount,
+        modified: recurringRes.modifiedCount,
+      },
+    },
+  });
+});

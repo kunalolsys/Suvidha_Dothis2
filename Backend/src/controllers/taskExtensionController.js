@@ -72,7 +72,7 @@ export const getEligibleTasksForExtension = handleAsync(async (req, res) => {
     taskType: "DelegationTask",
     isDeleted: { $ne: true },
     status: { $nin: ["Completed", "Stopped", "Not Done", "Overdue"] },
-    dueDate: { $lte: thresholdDate },
+    dueDate: { $gte: thresholdDate },
   })
     .populate("assignedBy", "name email")
     .populate("departmentOfAssignToUser", "name")

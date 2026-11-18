@@ -43,7 +43,7 @@ const TaskDistribution = () => {
 
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
-  const [filterType, setFilterType] = useState("Pending"); // all | recurring | non-recurring
+  const [filterType, setFilterType] = useState("all"); // all | recurring | non-recurring
   const [sortBy, setSortBy] = useState("newest"); // date | title | status
   const debounceSearch = useDebounce(search);
   const { permissions, isSuper } = useSelector((state) => state.permissions);

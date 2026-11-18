@@ -12,6 +12,7 @@ import {
   completeTaskBucket,
   getAllTaskBuckets,
   updateTaskBucket,
+  getUndistributedTaskBuckets,
 } from "../controllers/taskBucketController.js";
 
 import { authenticateJWT } from "../middleware/authMiddleware.js";
@@ -56,5 +57,5 @@ router.patch("/:id/complete", authenticateJWT, completeTaskBucket);
 router.get("/:id/reporting-users", authenticateJWT, getBucketReportingUsers);
 router.get("/bucket/export", authenticateJWT, exportTaskBuckets);
 router.get("/bucket/export-pending", authenticateJWT, exportPendingTaskBuckets);
-
+router.get("/public/undistributed", getUndistributedTaskBuckets);
 export default router;

@@ -1543,378 +1543,461 @@ const TaskTable = ({
 
           {/* ONE TIME TASKS TAB */}
           <TabsContent value="one-time">
-            <div className="rounded-lg border overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    {canDelete && (
-                      <TableHead className="w-[50px]">
-                        <Checkbox
-                          checked={
-                            allTasks.length > 0 &&
-                            allTasks.every((t) =>
-                              selectedOneTimeTaskIds.includes(t._id),
-                            )
-                          }
-                          onChange={handleSelectAllOneTimeTasks}
-                        />
-                      </TableHead>
-                    )}
-                    {activeColumns
-                      .filter((col) => col.visible)
-                      .map((col) => (
-                        <TableHead key={col.key}>{col.label}</TableHead>
-                      ))}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {!tasksLoading &&
-                    allTasks.length > 0 &&
-                    allTasks.map((task, i) => {
-                      const assignedByUser = allUsers.find(
-                        (u) => String(u._id) === String(task.assignedBy?._id),
-                      );
-                      const assignedToUser = allUsers.find(
-                        (u) => String(u._id) === String(task.assignedTo?._id),
-                      );
+            {(() => {
+              const getColWidthClass = (key) => {
+                switch (key) {
+                  case "sr":
+                    return "w-[65px] min-w-[65px] whitespace-nowrap";
+                  case "taskId":
+                    return "w-[110px] min-w-[110px] whitespace-nowrap";
+                  case "title":
+                    return "min-w-[210px] max-w-[260px]";
+                  case "description":
+                    return "min-w-[230px] max-w-[280px]";
+                  case "assignedBy":
+                  case "assignedTo":
+                    return "min-w-[155px] whitespace-nowrap";
+                  case "department":
+                    return "min-w-[140px] whitespace-nowrap";
+                  case "recurringId":
+                    return "w-[120px] min-w-[120px] whitespace-nowrap text-center";
+                  case "startDate":
+                  case "dueDate":
+                    return "min-w-[135px] whitespace-nowrap";
+                  case "delay":
+                    return "min-w-[165px] whitespace-nowrap";
+                  case "status":
+                    return "w-[125px] min-w-[125px] whitespace-nowrap";
+                  case "action":
+                    return "w-[140px] min-w-[140px] whitespace-nowrap";
+                  default:
+                    return "min-w-[130px] whitespace-nowrap";
+                }
+              };
 
-                      return (
-                        <TableRow
-                          key={task._id || i}
-                          className="hover:bg-slate-50"
-                        >
-                          {canDelete && (
-                            <TableCell>
-                              <Checkbox
-                                checked={selectedOneTimeTaskIds.includes(
-                                  task._id,
-                                )}
-                                onChange={() =>
-                                  toggleOneTaskSelection(task._id)
-                                }
-                              />
-                            </TableCell>
-                          )}
-                          {columns.find((c) => c.key === "sr")?.visible && (
-                            <TableCell>
-                              {(currentPage - 1) * itemsPerPage + i + 1}
-                            </TableCell>
-                          )}
-                          {columns.find((c) => c.key === "taskId")?.visible && (
-                            <TableCell className="font-medium whitespace-nowrap">
-                              {task.TaskId || "-"}
-                            </TableCell>
-                          )}
-                          {columns.find((c) => c.key === "title")?.visible && (
-                            <TableCell
-                              className="font-medium whitespace-nowrap truncate max-w-[200px]"
-                              title={task.title}
+              return (
+                <div className="w-full rounded-lg border overflow-x-auto bg-white">
+                  <Table className="min-w-[1650px] w-full">
+                    <TableHeader className="bg-gray-50">
+                      <TableRow>
+                        {canDelete && (
+                          <TableHead className="w-[50px] min-w-[50px] whitespace-nowrap">
+                            <Checkbox
+                              checked={
+                                allTasks.length > 0 &&
+                                allTasks.every((t) =>
+                                  selectedOneTimeTaskIds.includes(t._id),
+                                )
+                              }
+                              onChange={handleSelectAllOneTimeTasks}
+                            />
+                          </TableHead>
+                        )}
+                        {activeColumns
+                          .filter((col) => col.visible)
+                          .map((col) => (
+                            <TableHead
+                              key={col.key}
+                              className={getColWidthClass(col.key)}
                             >
-                              {task.title}
-                            </TableCell>
-                          )}
-                          {columns.find((c) => c.key === "description")
-                            ?.visible && (
-                            <TableCell>
-                              {task.description ? (
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <p className="max-w-[200px] truncate text-sm text-gray-700 cursor-default">
-                                      {task.description}
-                                    </p>
-                                  </TooltipTrigger>
-                                  <TooltipContent className="max-w-xs break-words whitespace-pre-wrap">
-                                    <p>{task.description}</p>
-                                  </TooltipContent>
-                                </Tooltip>
-                              ) : (
-                                <span className="text-gray-400 text-sm">-</span>
+                              {col.label}
+                            </TableHead>
+                          ))}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {!tasksLoading &&
+                        allTasks.length > 0 &&
+                        allTasks.map((task, i) => {
+                          const assignedByUser = allUsers.find(
+                            (u) =>
+                              String(u._id) === String(task.assignedBy?._id),
+                          );
+                          const assignedToUser = allUsers.find(
+                            (u) =>
+                              String(u._id) === String(task.assignedTo?._id),
+                          );
+
+                          return (
+                            <TableRow
+                              key={task._id || i}
+                              className="hover:bg-slate-50"
+                            >
+                              {canDelete && (
+                                <TableCell className="w-[50px] min-w-[50px] whitespace-nowrap">
+                                  <Checkbox
+                                    checked={selectedOneTimeTaskIds.includes(
+                                      task._id,
+                                    )}
+                                    onChange={() =>
+                                      toggleOneTaskSelection(task._id)
+                                    }
+                                  />
+                                </TableCell>
                               )}
-                            </TableCell>
-                          )}
-                          {columns.find((c) => c.key === "assignedBy")
-                            ?.visible && (
-                            <TableCell>
-                              <span className="text-sm font-medium text-gray-900">
-                                {task.assignedBy?.name || "-"}
-                              </span>
-                            </TableCell>
-                          )}
-                          {columns.find((c) => c.key === "assignedTo")
-                            ?.visible && (
-                            <TableCell>
-                              <span className="text-sm font-medium text-gray-900">
-                                {task.assignedTo?.name || "-"}
-                              </span>
-                            </TableCell>
-                          )}
-                          {columns.find((c) => c.key === "department")
-                            ?.visible && (
-                            <TableCell className="whitespace-nowrap">
-                              {task.departmentOfAssignToUser?.name || "-"}
-                            </TableCell>
-                          )}
-                          {columns.find((c) => c.key === "recurringId")
-                            ?.visible && (
-                            <TableCell className="text-center">
-                              {task.recurringRefId || "-"}
-                            </TableCell>
-                          )}
-                          {columns.find((c) => c.key === "startDate")
-                            ?.visible && (
-                            <TableCell className="whitespace-nowrap">
-                              {task.startDate
-                                ? format(
-                                    new Date(task.startDate),
-                                    "dd MMM yyyy",
-                                  )
-                                : "-"}
-                            </TableCell>
-                          )}
-                          {columns.find((c) => c.key === "dueDate")
-                            ?.visible && (
-                            <TableCell className="whitespace-nowrap">
-                              {task.dueDate
-                                ? format(new Date(task.dueDate), "dd MMM yyyy")
-                                : "-"}
-                            </TableCell>
-                          )}
-                          {columns.find((c) => c.key === "delay")?.visible && (
-                            <TableCell className="whitespace-nowrap">
-                              {(() => {
-                                if (
-                                  ["Completed", "Stopped", "Not Done"].includes(
-                                    task.status,
-                                  )
-                                ) {
-                                  return (
-                                    <span className="text-gray-400 text-xs font-medium">
-                                      —
+                              {columns.find((c) => c.key === "sr")?.visible && (
+                                <TableCell className={getColWidthClass("sr")}>
+                                  {(currentPage - 1) * itemsPerPage + i + 1}
+                                </TableCell>
+                              )}
+                              {columns.find((c) => c.key === "taskId")
+                                ?.visible && (
+                                <TableCell
+                                  className={`font-medium ${getColWidthClass("taskId")}`}
+                                >
+                                  {task.TaskId || "-"}
+                                </TableCell>
+                              )}
+                              {columns.find((c) => c.key === "title")
+                                ?.visible && (
+                                <TableCell
+                                  className={`font-medium ${getColWidthClass("title")}`}
+                                  title={task.title}
+                                >
+                                  <span className="truncate max-w-[230px] inline-block align-middle">
+                                    {task.title}
+                                  </span>
+                                </TableCell>
+                              )}
+                              {columns.find((c) => c.key === "description")
+                                ?.visible && (
+                                <TableCell
+                                  className={getColWidthClass("description")}
+                                >
+                                  {task.description ? (
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <p className="max-w-[250px] truncate text-sm text-gray-700 cursor-default">
+                                          {task.description}
+                                        </p>
+                                      </TooltipTrigger>
+                                      <TooltipContent className="max-w-xs break-words whitespace-pre-wrap">
+                                        <p>{task.description}</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  ) : (
+                                    <span className="text-gray-400 text-sm">
+                                      -
                                     </span>
-                                  );
-                                }
-                                const dueStatus = getDueStatus(
-                                  task.dueDate || task.plannedDueDate,
-                                );
-                                if (!dueStatus)
-                                  return (
-                                    <span className="text-gray-400 text-xs font-medium">
-                                      —
-                                    </span>
-                                  );
+                                  )}
+                                </TableCell>
+                              )}
+                              {columns.find((c) => c.key === "assignedBy")
+                                ?.visible && (
+                                <TableCell
+                                  className={getColWidthClass("assignedBy")}
+                                >
+                                  <span className="text-sm font-medium text-gray-900">
+                                    {task.assignedBy?.name || "-"}
+                                  </span>
+                                </TableCell>
+                              )}
+                              {columns.find((c) => c.key === "assignedTo")
+                                ?.visible && (
+                                <TableCell
+                                  className={getColWidthClass("assignedTo")}
+                                >
+                                  <span className="text-sm font-medium text-gray-900">
+                                    {task.assignedTo?.name || "-"}
+                                  </span>
+                                </TableCell>
+                              )}
+                              {columns.find((c) => c.key === "department")
+                                ?.visible && (
+                                <TableCell
+                                  className={getColWidthClass("department")}
+                                >
+                                  {task.departmentOfAssignToUser?.name || "-"}
+                                </TableCell>
+                              )}
+                              {columns.find((c) => c.key === "recurringId")
+                                ?.visible && (
+                                <TableCell
+                                  className={getColWidthClass("recurringId")}
+                                >
+                                  {task.recurringRefId || "-"}
+                                </TableCell>
+                              )}
+                              {columns.find((c) => c.key === "startDate")
+                                ?.visible && (
+                                <TableCell
+                                  className={getColWidthClass("startDate")}
+                                >
+                                  {task.startDate
+                                    ? format(
+                                        new Date(task.startDate),
+                                        "dd MMM yyyy",
+                                      )
+                                    : "-"}
+                                </TableCell>
+                              )}
+                              {columns.find((c) => c.key === "dueDate")
+                                ?.visible && (
+                                <TableCell
+                                  className={getColWidthClass("dueDate")}
+                                >
+                                  {task.dueDate
+                                    ? format(
+                                        new Date(task.dueDate),
+                                        "dd MMM yyyy",
+                                      )
+                                    : "-"}
+                                </TableCell>
+                              )}
+                              {columns.find((c) => c.key === "delay")
+                                ?.visible && (
+                                <TableCell
+                                  className={getColWidthClass("delay")}
+                                >
+                                  {(() => {
+                                    if (
+                                      [
+                                        "Completed",
+                                        "Stopped",
+                                        "Not Done",
+                                      ].includes(task.status)
+                                    ) {
+                                      return (
+                                        <span className="text-gray-400 text-xs font-medium">
+                                          —
+                                        </span>
+                                      );
+                                    }
+                                    const dueStatus = getDueStatus(
+                                      task.dueDate || task.plannedDueDate,
+                                    );
+                                    if (!dueStatus)
+                                      return (
+                                        <span className="text-gray-400 text-xs font-medium">
+                                          —
+                                        </span>
+                                      );
 
-                                const isOverdue = dueStatus.type === "overdue";
-                                const isToday = dueStatus.type === "today";
+                                    const isOverdue =
+                                      dueStatus.type === "overdue";
+                                    const isToday = dueStatus.type === "today";
 
-                                return (
-                                  <div
-                                    className={`relative inline-flex items-center overflow-hidden rounded-lg border bg-white px-3 py-2 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-lg ${
-                                      isOverdue
-                                        ? "border-l-4 border-l-red-500 bg-red-50/20"
-                                        : isToday
-                                          ? "border-l-4 border-l-amber-500 bg-amber-50/20"
-                                          : "border-l-4 border-l-emerald-500"
-                                    }`}
-                                  >
-                                    <div className="mr-3 relative flex h-3 w-3 items-center justify-center">
-                                      <span
-                                        className={`absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                                    return (
+                                      <div
+                                        className={`relative inline-flex items-center overflow-hidden rounded-lg border bg-white px-3 py-2 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-lg ${
                                           isOverdue
-                                            ? "bg-red-500 animate-ping"
+                                            ? "border-l-4 border-l-red-500 bg-red-50/20"
                                             : isToday
-                                              ? "bg-amber-500 animate-ping"
-                                              : "bg-emerald-500 animate-ping"
-                                        }`}
-                                      />
-                                      <span
-                                        className={`relative inline-flex h-3 w-3 rounded-full ${
-                                          isOverdue
-                                            ? "bg-red-500"
-                                            : isToday
-                                              ? "bg-amber-500"
-                                              : "bg-emerald-500"
-                                        }`}
-                                      />
-                                    </div>
-                                    <div>
-                                      <p
-                                        className={`text-xs font-semibold ${
-                                          isOverdue
-                                            ? "text-red-700"
-                                            : isToday
-                                              ? "text-amber-700"
-                                              : "text-emerald-700"
+                                              ? "border-l-4 border-l-amber-500 bg-amber-50/20"
+                                              : "border-l-4 border-l-emerald-500"
                                         }`}
                                       >
-                                        {dueStatus.label}
-                                      </p>
-                                      <p className="text-[11px] text-muted-foreground">
-                                        {dueStatus.text}
-                                      </p>
-                                    </div>
-                                  </div>
-                                );
-                              })()}
-                            </TableCell>
-                          )}
-                          {columns.find((c) => c.key === "status")?.visible && (
-                            <TableCell className="">
-                              {getStatusBadge(task.status)}
-                            </TableCell>
-                          )}
-                          {columns.find((c) => c.key === "action")?.visible &&
-                            (canUpdate || canDelete) && (
-                              <TableCell className="grid grid-cols-3 grid-rows-2 gap-1 w-fit items-center">
-                                <TooltipProvider>
-                                  {canUpdate && (
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <Button
-                                          variant="ghost"
-                                          size="icon"
-                                          className="h-8 w-8 text-blue-600 hover:bg-blue-50"
-                                          onClick={() => handleEditClick(task)}
-                                          disabled={
-                                            task.status === "Completed" ||
-                                            task?.recurringRefId
-                                          }
-                                        >
-                                          <FilePenLine className="h-4 w-4" />
-                                        </Button>
-                                      </TooltipTrigger>
-                                      <TooltipContent>
-                                        <p>Edit Task</p>
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  )}
-
-                                  {canUpdate && (
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <Button
-                                          variant="ghost"
-                                          size="icon"
-                                          className="h-8 w-8 text-gray-600 hover:bg-gray-50"
-                                          onClick={() =>
-                                            handleChecklistClick(task)
-                                          }
-                                          disabled={
-                                            task.status === "Completed" ||
-                                            !task.checklist ||
-                                            task.checklist.length === 0
-                                          }
-                                        >
-                                          <ClipboardList className="h-4 w-4" />
-                                        </Button>
-                                      </TooltipTrigger>
-                                      <TooltipContent>
-                                        <p>View Checklist</p>
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  )}
-
-                                  {canUpdate && (
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <Button
-                                          variant="ghost"
-                                          size="icon"
-                                          className="h-8 w-8 text-green-600 hover:bg-green-50"
-                                          onClick={() =>
-                                            handleToggleComplete(task)
-                                          }
-                                          disabled={
-                                            task.status === "Completed" ||
-                                            task.status === "Upcoming" ||
-                                            (task.checklist &&
-                                              task.checklist.length > 0)
-                                          }
-                                        >
-                                          <CheckCircle className="h-4 w-4" />
-                                        </Button>
-                                      </TooltipTrigger>
-                                      <TooltipContent>
-                                        <p>Mark as Complete</p>
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  )}
-
-                                  {canUpdate &&
-                                    currentUser &&
-                                    (currentUser.role?.name === "Admin" ||
-                                      currentUser.role === "Admin" ||
-                                      currentUser._id ===
-                                        (task.createdBy?._id ||
-                                          task.createdBy)) && (
-                                      <Tooltip>
-                                        <TooltipTrigger asChild>
-                                          <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            disabled={
-                                              assignedByUser?._id ===
-                                                assignedToUser?._id ||
-                                              task.status === "Completed"
-                                            }
-                                            className="h-8 w-8 text-indigo-600 hover:bg-indigo-50"
-                                            onClick={() =>
-                                              openReassignDialog(task)
-                                            }
+                                        <div className="mr-3 relative flex h-3 w-3 items-center justify-center shrink-0">
+                                          <span
+                                            className={`absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                                              isOverdue
+                                                ? "bg-red-500 animate-ping"
+                                                : isToday
+                                                  ? "bg-amber-500 animate-ping"
+                                                  : "bg-emerald-500 animate-ping"
+                                            }`}
+                                          />
+                                          <span
+                                            className={`relative inline-flex h-3 w-3 rounded-full ${
+                                              isOverdue
+                                                ? "bg-red-500"
+                                                : isToday
+                                                  ? "bg-amber-500"
+                                                  : "bg-emerald-500"
+                                            }`}
+                                          />
+                                        </div>
+                                        <div>
+                                          <p
+                                            className={`text-xs font-semibold whitespace-nowrap ${
+                                              isOverdue
+                                                ? "text-red-700"
+                                                : isToday
+                                                  ? "text-amber-700"
+                                                  : "text-emerald-700"
+                                            }`}
                                           >
-                                            <Users className="h-4 w-4" />
-                                          </Button>
-                                        </TooltipTrigger>
-                                        <TooltipContent>
-                                          <p>Re-assign User</p>
-                                        </TooltipContent>
-                                      </Tooltip>
-                                    )}
+                                            {dueStatus.label}
+                                          </p>
+                                          <p className="text-[11px] text-muted-foreground whitespace-nowrap">
+                                            {dueStatus.text}
+                                          </p>
+                                        </div>
+                                      </div>
+                                    );
+                                  })()}
+                                </TableCell>
+                              )}
+                              {columns.find((c) => c.key === "status")
+                                ?.visible && (
+                                <TableCell
+                                  className={getColWidthClass("status")}
+                                >
+                                  {getStatusBadge(task.status)}
+                                </TableCell>
+                              )}
+                              {columns.find((c) => c.key === "action")
+                                ?.visible &&
+                                (canUpdate || canDelete) && (
+                                  <TableCell
+                                    className={getColWidthClass("action")}
+                                  >
+                                    <div className="grid grid-cols-3 gap-1 w-fit items-center">
+                                      <TooltipProvider>
+                                        {canUpdate && (
+                                          <Tooltip>
+                                            <TooltipTrigger asChild>
+                                              <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-8 w-8 text-blue-600 hover:bg-blue-50"
+                                                onClick={() =>
+                                                  handleEditClick(task)
+                                                }
+                                                disabled={
+                                                  task.status === "Completed" ||
+                                                  task?.recurringRefId
+                                                }
+                                              >
+                                                <FilePenLine className="h-4 w-4" />
+                                              </Button>
+                                            </TooltipTrigger>
+                                            <TooltipContent>
+                                              <p>Edit Task</p>
+                                            </TooltipContent>
+                                          </Tooltip>
+                                        )}
 
-                                  {canDelete && (
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <Button
-                                          variant="ghost"
-                                          disabled={
-                                            currentUser?.role &&
-                                            !["Owner", "Admin"].includes(
-                                              currentUser.role.name,
-                                            )
-                                          }
-                                          size="icon"
-                                          className="h-8 w-8 text-red-600 hover:bg-red-50"
-                                          onClick={() =>
-                                            handleDeleteClick(task)
-                                          }
-                                        >
-                                          <Trash2 className="h-4 w-4" />
-                                        </Button>
-                                      </TooltipTrigger>
-                                      <TooltipContent>
-                                        <p>Delete Task</p>
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  )}
-                                </TooltipProvider>
-                              </TableCell>
-                            )}
-                        </TableRow>
-                      );
-                    })}
-                </TableBody>
-              </Table>
-              {tasksLoading ? (
-                <div className="flex h-24 items-center justify-center w-full text-gray-500">
-                  Loading tasks...
+                                        {canUpdate && (
+                                          <Tooltip>
+                                            <TooltipTrigger asChild>
+                                              <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-8 w-8 text-gray-600 hover:bg-gray-50"
+                                                onClick={() =>
+                                                  handleChecklistClick(task)
+                                                }
+                                                disabled={
+                                                  task.status === "Completed" ||
+                                                  !task.checklist ||
+                                                  task.checklist.length === 0
+                                                }
+                                              >
+                                                <ClipboardList className="h-4 w-4" />
+                                              </Button>
+                                            </TooltipTrigger>
+                                            <TooltipContent>
+                                              <p>View Checklist</p>
+                                            </TooltipContent>
+                                          </Tooltip>
+                                        )}
+
+                                        {canUpdate && (
+                                          <Tooltip>
+                                            <TooltipTrigger asChild>
+                                              <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-8 w-8 text-green-600 hover:bg-green-50"
+                                                onClick={() =>
+                                                  handleToggleComplete(task)
+                                                }
+                                                disabled={
+                                                  task.status === "Completed" ||
+                                                  task.status === "Upcoming" ||
+                                                  (task.checklist &&
+                                                    task.checklist.length > 0)
+                                                }
+                                              >
+                                                <CheckCircle className="h-4 w-4" />
+                                              </Button>
+                                            </TooltipTrigger>
+                                            <TooltipContent>
+                                              <p>Mark as Complete</p>
+                                            </TooltipContent>
+                                          </Tooltip>
+                                        )}
+
+                                        {canUpdate &&
+                                          currentUser &&
+                                          (currentUser.role?.name === "Admin" ||
+                                            currentUser.role === "Admin" ||
+                                            currentUser._id ===
+                                              (task.createdBy?._id ||
+                                                task.createdBy)) && (
+                                            <Tooltip>
+                                              <TooltipTrigger asChild>
+                                                <Button
+                                                  variant="ghost"
+                                                  size="icon"
+                                                  disabled={
+                                                    assignedByUser?._id ===
+                                                      assignedToUser?._id ||
+                                                    task.status === "Completed"
+                                                  }
+                                                  className="h-8 w-8 text-indigo-600 hover:bg-indigo-50"
+                                                  onClick={() =>
+                                                    openReassignDialog(task)
+                                                  }
+                                                >
+                                                  <Users className="h-4 w-4" />
+                                                </Button>
+                                              </TooltipTrigger>
+                                              <TooltipContent>
+                                                <p>Re-assign User</p>
+                                              </TooltipContent>
+                                            </Tooltip>
+                                          )}
+
+                                        {canDelete && (
+                                          <Tooltip>
+                                            <TooltipTrigger asChild>
+                                              <Button
+                                                variant="ghost"
+                                                disabled={
+                                                  currentUser?.role &&
+                                                  !["Owner", "Admin"].includes(
+                                                    currentUser.role.name,
+                                                  )
+                                                }
+                                                size="icon"
+                                                className="h-8 w-8 text-red-600 hover:bg-red-50"
+                                                onClick={() =>
+                                                  handleDeleteClick(task)
+                                                }
+                                              >
+                                                <Trash2 className="h-4 w-4" />
+                                              </Button>
+                                            </TooltipTrigger>
+                                            <TooltipContent>
+                                              <p>Delete Task</p>
+                                            </TooltipContent>
+                                          </Tooltip>
+                                        )}
+                                      </TooltipProvider>
+                                    </div>
+                                  </TableCell>
+                                )}
+                            </TableRow>
+                          );
+                        })}
+                    </TableBody>
+                  </Table>
+                  {tasksLoading ? (
+                    <div className="flex h-24 items-center justify-center w-full text-gray-500">
+                      Loading tasks...
+                    </div>
+                  ) : (
+                    allTasks.length === 0 && (
+                      <div className="h-24 flex items-center justify-center w-full text-gray-500">
+                        No tasks found.
+                      </div>
+                    )
+                  )}
                 </div>
-              ) : (
-                allTasks.length === 0 && (
-                  <div className="h-24 flex items-center justify-center w-full text-gray-500">
-                    No tasks found.
-                  </div>
-                )
-              )}
-            </div>
+              );
+            })()}
 
             {/* Backend Pagination */}
             <Pagination
@@ -1932,358 +2015,473 @@ const TaskTable = ({
 
           {/* RECURRING TASKS TAB */}
           <TabsContent value="recurrence">
-            <div className="rounded-lg border overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    {canDelete && (
-                      <TableHead className="w-[50px]">
-                        <Checkbox
-                          checked={
-                            allTasks.length > 0 &&
-                            allTasks.every((t) =>
-                              selectedRecurringTaskIds.includes(t._id),
-                            )
-                          }
-                          onChange={handleSelectAllRecurringTasks}
-                        />
-                      </TableHead>
-                    )}
-                    {activeRecurringColumns
-                      .filter((col) => col.visible)
-                      .map((col) => (
-                        <TableHead className="w-100" key={col.key}>
-                          {col.label}
-                        </TableHead>
-                      ))}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {!tasksLoading &&
-                    allTasks.length > 0 &&
-                    allTasks.map((task, i) => {
-                      const assignedByUser = allUsers.find(
-                        (u) => String(u._id) === String(task.assignedBy?._id),
-                      );
-                      const assignedToUser = allUsers.find(
-                        (u) => String(u._id) === String(task.assignedTo?._id),
-                      );
-                      return (
-                        <TableRow
-                          key={task._id || i}
-                          className="hover:bg-slate-50"
-                        >
-                          {canDelete && (
-                            <TableCell>
-                              <Checkbox
-                                checked={selectedRecurringTaskIds.includes(
-                                  task._id,
-                                )}
-                                onChange={() =>
-                                  toggleRecurringTaskSelection(task._id)
-                                }
-                              />
-                            </TableCell>
-                          )}
-                          {recurringColumns.find((c) => c.key === "sr")
-                            ?.visible && (
-                            <TableCell>
-                              {(currentPage - 1) * itemsPerPage + i + 1}
-                            </TableCell>
-                          )}
-                          {recurringColumns.find((c) => c.key === "taskId")
-                            ?.visible && (
-                            <TableCell className="font-medium whitespace-nowrap">
-                              {task.TaskId || "-"}
-                            </TableCell>
-                          )}
-                          {recurringColumns.find((c) => c.key === "title")
-                            ?.visible && (
-                            <TableCell
-                              className="font-medium whitespace-nowrap truncate max-w-[200px]"
-                              title={task.title}
+            {(() => {
+              const getRecurringColWidthClass = (key) => {
+                switch (key) {
+                  case "sr":
+                    return "w-[65px] min-w-[65px] whitespace-nowrap";
+                  case "taskId":
+                    return "w-[110px] min-w-[110px] whitespace-nowrap";
+                  case "title":
+                    return "min-w-[210px] max-w-[260px]";
+                  case "description":
+                    return "min-w-[230px] max-w-[280px]";
+                  case "frequency":
+                    return "w-[120px] min-w-[120px] whitespace-nowrap";
+                  case "monthlySchedule":
+                    return "min-w-[155px] whitespace-nowrap";
+                  case "weekDays":
+                    return "min-w-[160px] max-w-[220px]";
+                  case "startDate":
+                  case "endDate":
+                    return "min-w-[135px] whitespace-nowrap";
+                  case "assignedBy":
+                  case "assignedTo":
+                    return "min-w-[155px] whitespace-nowrap";
+                  case "department":
+                    return "min-w-[145px] whitespace-nowrap";
+                  case "status":
+                    return "w-[125px] min-w-[125px] whitespace-nowrap";
+                  case "action":
+                    return "w-[140px] min-w-[140px] whitespace-nowrap";
+                  default:
+                    return "min-w-[130px] whitespace-nowrap";
+                }
+              };
+
+              return (
+                <div className="w-full rounded-lg border overflow-x-auto bg-white">
+                  <Table className="min-w-[1750px] w-full">
+                    <TableHeader className="bg-gray-50">
+                      <TableRow>
+                        {canDelete && (
+                          <TableHead className="w-[50px] min-w-[50px] whitespace-nowrap">
+                            <Checkbox
+                              checked={
+                                allTasks.length > 0 &&
+                                allTasks.every((t) =>
+                                  selectedRecurringTaskIds.includes(t._id),
+                                )
+                              }
+                              onChange={handleSelectAllRecurringTasks}
+                            />
+                          </TableHead>
+                        )}
+                        {activeRecurringColumns
+                          .filter((col) => col.visible)
+                          .map((col) => (
+                            <TableHead
+                              key={col.key}
+                              className={getRecurringColWidthClass(col.key)}
                             >
-                              {task.title}
-                            </TableCell>
-                          )}
-                          {recurringColumns.find((c) => c.key === "description")
-                            ?.visible && (
-                            <TableCell>
-                              {task.description ? (
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <p className="max-w-[200px] truncate text-sm text-gray-700 cursor-default">
-                                      {task.description}
-                                    </p>
-                                  </TooltipTrigger>
-                                  <TooltipContent className="max-w-xs break-words whitespace-pre-wrap">
-                                    <p>{task.description}</p>
-                                  </TooltipContent>
-                                </Tooltip>
-                              ) : (
-                                <span className="text-gray-400 text-sm">-</span>
-                              )}
-                            </TableCell>
-                          )}
-                          {recurringColumns.find((c) => c.key === "frequency")
-                            ?.visible && (
-                            <TableCell>
-                              <Badge
-                                variant="outline"
-                                className="bg-blue-50 text-blue-700 whitespace-nowrap"
-                              >
-                                {task.frequency || "Custom"}
-                              </Badge>
-                            </TableCell>
-                          )}
-                          {recurringColumns.find(
-                            (c) => c.key === "monthlySchedule",
-                          )?.visible && (
-                            <TableCell className="whitespace-nowrap">
-                              {task.frequency?.toLowerCase() === "monthly" &&
-                              task.monthlyScheduleType === "week" &&
-                              task.monthlyOccurrence &&
-                              task.monthlyWeekDay ? (
-                                <Badge
-                                  variant="outline"
-                                  className="bg-indigo-50 text-indigo-700 border-indigo-200 capitalize"
-                                >
-                                  {`${task.monthlyOccurrence} ${task.monthlyWeekDay}`}
-                                </Badge>
-                              ) : (
-                                <span className="text-gray-400">-</span>
-                              )}
-                            </TableCell>
-                          )}
-                          {recurringColumns.find((c) => c.key === "weekDays")
-                            ?.visible && (
-                            <TableCell>
-                              {(() => {
-                                const frequency = task.frequency?.toLowerCase();
-                                let days =
-                                  frequency === "weekly"
-                                    ? task.weekDays
-                                    : task.weekStartDay;
-                                if (!days) return "-";
-                                if (typeof days === "string") {
-                                  try {
-                                    days = JSON.parse(days);
-                                  } catch (e) {
-                                    return days;
-                                  }
-                                }
-                                if (Array.isArray(days) && days.length > 0) {
-                                  if (
-                                    typeof days[0] === "object" &&
-                                    days[0] !== null
-                                  ) {
-                                    return days
-                                      .map((d) => d.label || d.value || d.day)
-                                      .join(", ");
-                                  }
-                                  return days.join(", ");
-                                }
-                                return "-";
-                              })()}
-                            </TableCell>
-                          )}
-                          {recurringColumns.find((c) => c.key === "startDate")
-                            ?.visible && (
-                            <TableCell className="whitespace-nowrap">
-                              {task.startDate
-                                ? format(
-                                    new Date(task.startDate),
-                                    "dd MMM yyyy",
-                                  )
-                                : "-"}
-                            </TableCell>
-                          )}
-                          {recurringColumns.find((c) => c.key === "endDate")
-                            ?.visible && (
-                            <TableCell className="whitespace-nowrap">
-                              {task.endDate
-                                ? format(new Date(task.endDate), "dd MMM yyyy")
-                                : "-"}
-                            </TableCell>
-                          )}
-                          {recurringColumns.find((c) => c.key === "assignedBy")
-                            ?.visible && (
-                            <TableCell className="w-100">
-                              <span className="text-sm font-medium text-gray-900">
-                                {task.assignedBy?.name || "-"}
-                              </span>
-                            </TableCell>
-                          )}
-                          {recurringColumns.find((c) => c.key === "assignedTo")
-                            ?.visible && (
-                            <TableCell className="w-100">
-                              <span className="text-sm font-medium text-gray-900">
-                                {task.assignedTo?.name || "-"}
-                              </span>
-                            </TableCell>
-                          )}
-                          {recurringColumns.find((c) => c.key === "department")
-                            ?.visible && (
-                            <TableCell className="w-100 whitespace-nowrap">
-                              {task.departmentOfAssignToUser?.name || "-"}
-                            </TableCell>
-                          )}
-                          {recurringColumns.find((c) => c.key === "status")
-                            ?.visible && (
-                            <TableCell className="">
-                              {getStatusBadge(task.status)}
-                            </TableCell>
-                          )}
-                          {recurringColumns.find((c) => c.key === "action")
-                            ?.visible &&
-                            (canUpdate || canDelete) && (
-                              <TableCell className="grid grid-cols-3 grid-rows-2 gap-1 w-fit items-center">
-                                <TooltipProvider>
-                                  {canUpdate && (
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <Button
-                                          variant="ghost"
-                                          size="icon"
-                                          className="h-8 w-8 text-blue-600 hover:bg-blue-50"
-                                          onClick={() => handleEditClick(task)}
-                                        >
-                                          <FilePenLine className="h-4 w-4" />
-                                        </Button>
-                                      </TooltipTrigger>
-                                      <TooltipContent>
-                                        <p>Edit Task</p>
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  )}
-
-                                  {canUpdate && (
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <Button
-                                          variant="ghost"
-                                          size="icon"
-                                          className="h-8 w-8 text-gray-600 hover:bg-gray-50"
-                                          onClick={() =>
-                                            handleChecklistClick(task)
-                                          }
-                                          disabled={
-                                            task.status === "Completed" ||
-                                            !task.checklist ||
-                                            task.checklist.length === 0
-                                          }
-                                        >
-                                          <ClipboardList className="h-4 w-4" />
-                                        </Button>
-                                      </TooltipTrigger>
-                                      <TooltipContent>
-                                        <p>View Checklist</p>
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  )}
-
-                                  {canUpdate && (
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <Button
-                                          variant="ghost"
-                                          size="icon"
-                                          className="h-8 w-8 text-green-600 hover:bg-green-50"
-                                          onClick={() =>
-                                            handleToggleComplete(task)
-                                          }
-                                          disabled={
-                                            task.status === "Completed" ||
-                                            task.status === "Upcoming" ||
-                                            (task.checklist &&
-                                              task.checklist.length > 0)
-                                          }
-                                        >
-                                          <CheckCircle className="h-4 w-4" />
-                                        </Button>
-                                      </TooltipTrigger>
-                                      <TooltipContent>
-                                        <p>Mark as Complete</p>
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  )}
-
-                                  {canUpdate &&
-                                    currentUser &&
-                                    (currentUser.role?.name === "Admin" ||
-                                      currentUser.role === "Admin" ||
-                                      currentUser._id ===
-                                        (task.createdBy?._id ||
-                                          task.createdBy)) && (
-                                      <Tooltip>
-                                        <TooltipTrigger asChild>
-                                          <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            disabled={
-                                              assignedByUser?._id ===
-                                                assignedToUser?._id ||
-                                              task.status === "Completed"
-                                            }
-                                            className="h-8 w-8 text-indigo-600 hover:bg-indigo-50"
-                                            onClick={() =>
-                                              openReassignDialog(task)
-                                            }
-                                          >
-                                            <Users className="h-4 w-4" />
-                                          </Button>
-                                        </TooltipTrigger>
-                                        <TooltipContent>
-                                          <p>Re-assign User</p>
-                                        </TooltipContent>
-                                      </Tooltip>
+                              {col.label}
+                            </TableHead>
+                          ))}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {!tasksLoading &&
+                        allTasks.length > 0 &&
+                        allTasks.map((task, i) => {
+                          const assignedByUser = allUsers.find(
+                            (u) =>
+                              String(u._id) === String(task.assignedBy?._id),
+                          );
+                          const assignedToUser = allUsers.find(
+                            (u) =>
+                              String(u._id) === String(task.assignedTo?._id),
+                          );
+                          return (
+                            <TableRow
+                              key={task._id || i}
+                              className="hover:bg-slate-50"
+                            >
+                              {canDelete && (
+                                <TableCell className="w-[50px] min-w-[50px] whitespace-nowrap">
+                                  <Checkbox
+                                    checked={selectedRecurringTaskIds.includes(
+                                      task._id,
                                     )}
-
-                                  {canDelete && (
+                                    onChange={() =>
+                                      toggleRecurringTaskSelection(task._id)
+                                    }
+                                  />
+                                </TableCell>
+                              )}
+                              {recurringColumns.find((c) => c.key === "sr")
+                                ?.visible && (
+                                <TableCell
+                                  className={getRecurringColWidthClass("sr")}
+                                >
+                                  {(currentPage - 1) * itemsPerPage + i + 1}
+                                </TableCell>
+                              )}
+                              {recurringColumns.find((c) => c.key === "taskId")
+                                ?.visible && (
+                                <TableCell
+                                  className={`font-medium ${getRecurringColWidthClass("taskId")}`}
+                                >
+                                  {task.TaskId || "-"}
+                                </TableCell>
+                              )}
+                              {recurringColumns.find((c) => c.key === "title")
+                                ?.visible && (
+                                <TableCell
+                                  className={`font-medium ${getRecurringColWidthClass("title")}`}
+                                  title={task.title}
+                                >
+                                  <span className="truncate max-w-[230px] inline-block align-middle">
+                                    {task.title}
+                                  </span>
+                                </TableCell>
+                              )}
+                              {recurringColumns.find(
+                                (c) => c.key === "description",
+                              )?.visible && (
+                                <TableCell
+                                  className={getRecurringColWidthClass(
+                                    "description",
+                                  )}
+                                >
+                                  {task.description ? (
                                     <Tooltip>
                                       <TooltipTrigger asChild>
-                                        <Button
-                                          variant="ghost"
-                                          disabled={
-                                            currentUser?.role &&
-                                            !["Owner", "Admin"].includes(
-                                              currentUser.role.name,
-                                            )
-                                          }
-                                          size="icon"
-                                          className="h-8 w-8 text-red-600 hover:bg-red-50"
-                                          onClick={() =>
-                                            handleDeleteClick(task)
-                                          }
-                                        >
-                                          <Trash2 className="h-4 w-4" />
-                                        </Button>
+                                        <p className="max-w-[250px] truncate text-sm text-gray-700 cursor-default">
+                                          {task.description}
+                                        </p>
                                       </TooltipTrigger>
-                                      <TooltipContent>
-                                        <p>Delete Task</p>
+                                      <TooltipContent className="max-w-xs break-words whitespace-pre-wrap">
+                                        <p>{task.description}</p>
                                       </TooltipContent>
                                     </Tooltip>
+                                  ) : (
+                                    <span className="text-gray-400 text-sm">
+                                      -
+                                    </span>
                                   )}
-                                </TooltipProvider>
-                              </TableCell>
-                            )}
-                        </TableRow>
-                      );
-                    })}
-                </TableBody>
-              </Table>
-              {tasksLoading ? (
-                <div className="flex h-24 items-center justify-center w-full text-gray-500">
-                  Loading tasks...
+                                </TableCell>
+                              )}
+                              {recurringColumns.find(
+                                (c) => c.key === "frequency",
+                              )?.visible && (
+                                <TableCell
+                                  className={getRecurringColWidthClass(
+                                    "frequency",
+                                  )}
+                                >
+                                  <Badge
+                                    variant="outline"
+                                    className="bg-blue-50 text-blue-700 whitespace-nowrap"
+                                  >
+                                    {task.frequency || "Custom"}
+                                  </Badge>
+                                </TableCell>
+                              )}
+                              {recurringColumns.find(
+                                (c) => c.key === "monthlySchedule",
+                              )?.visible && (
+                                <TableCell
+                                  className={getRecurringColWidthClass(
+                                    "monthlySchedule",
+                                  )}
+                                >
+                                  {task.frequency?.toLowerCase() ===
+                                    "monthly" &&
+                                  task.monthlyScheduleType === "week" &&
+                                  task.monthlyOccurrence &&
+                                  task.monthlyWeekDay ? (
+                                    <Badge
+                                      variant="outline"
+                                      className="bg-indigo-50 text-indigo-700 border-indigo-200 capitalize whitespace-nowrap"
+                                    >
+                                      {`${task.monthlyOccurrence} ${task.monthlyWeekDay}`}
+                                    </Badge>
+                                  ) : (
+                                    <span className="text-gray-400">-</span>
+                                  )}
+                                </TableCell>
+                              )}
+                              {recurringColumns.find(
+                                (c) => c.key === "weekDays",
+                              )?.visible && (
+                                <TableCell
+                                  className={getRecurringColWidthClass(
+                                    "weekDays",
+                                  )}
+                                >
+                                  {(() => {
+                                    const frequency =
+                                      task.frequency?.toLowerCase();
+                                    let days =
+                                      frequency === "weekly"
+                                        ? task.weekDays
+                                        : task.weekStartDay;
+                                    if (!days) return "-";
+                                    if (typeof days === "string") {
+                                      try {
+                                        days = JSON.parse(days);
+                                      } catch (e) {
+                                        return days;
+                                      }
+                                    }
+                                    if (
+                                      Array.isArray(days) &&
+                                      days.length > 0
+                                    ) {
+                                      if (
+                                        typeof days[0] === "object" &&
+                                        days[0] !== null
+                                      ) {
+                                        return days
+                                          .map(
+                                            (d) => d.label || d.value || d.day,
+                                          )
+                                          .join(", ");
+                                      }
+                                      return days.join(", ");
+                                    }
+                                    return "-";
+                                  })()}
+                                </TableCell>
+                              )}
+                              {recurringColumns.find(
+                                (c) => c.key === "startDate",
+                              )?.visible && (
+                                <TableCell
+                                  className={getRecurringColWidthClass(
+                                    "startDate",
+                                  )}
+                                >
+                                  {task.startDate
+                                    ? format(
+                                        new Date(task.startDate),
+                                        "dd MMM yyyy",
+                                      )
+                                    : "-"}
+                                </TableCell>
+                              )}
+                              {recurringColumns.find((c) => c.key === "endDate")
+                                ?.visible && (
+                                <TableCell
+                                  className={getRecurringColWidthClass(
+                                    "endDate",
+                                  )}
+                                >
+                                  {task.endDate
+                                    ? format(
+                                        new Date(task.endDate),
+                                        "dd MMM yyyy",
+                                      )
+                                    : "-"}
+                                </TableCell>
+                              )}
+                              {recurringColumns.find(
+                                (c) => c.key === "assignedBy",
+                              )?.visible && (
+                                <TableCell
+                                  className={getRecurringColWidthClass(
+                                    "assignedBy",
+                                  )}
+                                >
+                                  <span className="text-sm font-medium text-gray-900">
+                                    {task.assignedBy?.name || "-"}
+                                  </span>
+                                </TableCell>
+                              )}
+                              {recurringColumns.find(
+                                (c) => c.key === "assignedTo",
+                              )?.visible && (
+                                <TableCell
+                                  className={getRecurringColWidthClass(
+                                    "assignedTo",
+                                  )}
+                                >
+                                  <span className="text-sm font-medium text-gray-900">
+                                    {task.assignedTo?.name || "-"}
+                                  </span>
+                                </TableCell>
+                              )}
+                              {recurringColumns.find(
+                                (c) => c.key === "department",
+                              )?.visible && (
+                                <TableCell
+                                  className={getRecurringColWidthClass(
+                                    "department",
+                                  )}
+                                >
+                                  {task.departmentOfAssignToUser?.name || "-"}
+                                </TableCell>
+                              )}
+                              {recurringColumns.find((c) => c.key === "status")
+                                ?.visible && (
+                                <TableCell
+                                  className={getRecurringColWidthClass(
+                                    "status",
+                                  )}
+                                >
+                                  {getStatusBadge(task.status)}
+                                </TableCell>
+                              )}
+                              {recurringColumns.find((c) => c.key === "action")
+                                ?.visible &&
+                                (canUpdate || canDelete) && (
+                                  <TableCell
+                                    className={getRecurringColWidthClass(
+                                      "action",
+                                    )}
+                                  >
+                                    <div className="grid grid-cols-3 gap-1 w-fit items-center">
+                                      <TooltipProvider>
+                                        {canUpdate && (
+                                          <Tooltip>
+                                            <TooltipTrigger asChild>
+                                              <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-8 w-8 text-blue-600 hover:bg-blue-50"
+                                                onClick={() =>
+                                                  handleEditClick(task)
+                                                }
+                                              >
+                                                <FilePenLine className="h-4 w-4" />
+                                              </Button>
+                                            </TooltipTrigger>
+                                            <TooltipContent>
+                                              <p>Edit Task</p>
+                                            </TooltipContent>
+                                          </Tooltip>
+                                        )}
+
+                                        {canUpdate && (
+                                          <Tooltip>
+                                            <TooltipTrigger asChild>
+                                              <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-8 w-8 text-gray-600 hover:bg-gray-50"
+                                                onClick={() =>
+                                                  handleChecklistClick(task)
+                                                }
+                                                disabled={
+                                                  task.status === "Completed" ||
+                                                  !task.checklist ||
+                                                  task.checklist.length === 0
+                                                }
+                                              >
+                                                <ClipboardList className="h-4 w-4" />
+                                              </Button>
+                                            </TooltipTrigger>
+                                            <TooltipContent>
+                                              <p>View Checklist</p>
+                                            </TooltipContent>
+                                          </Tooltip>
+                                        )}
+
+                                        {canUpdate && (
+                                          <Tooltip>
+                                            <TooltipTrigger asChild>
+                                              <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-8 w-8 text-green-600 hover:bg-green-50"
+                                                onClick={() =>
+                                                  handleToggleComplete(task)
+                                                }
+                                                disabled={
+                                                  task.status === "Completed" ||
+                                                  task.status === "Upcoming" ||
+                                                  (task.checklist &&
+                                                    task.checklist.length > 0)
+                                                }
+                                              >
+                                                <CheckCircle className="h-4 w-4" />
+                                              </Button>
+                                            </TooltipTrigger>
+                                            <TooltipContent>
+                                              <p>Mark as Complete</p>
+                                            </TooltipContent>
+                                          </Tooltip>
+                                        )}
+
+                                        {canUpdate &&
+                                          currentUser &&
+                                          (currentUser.role?.name === "Admin" ||
+                                            currentUser.role === "Admin" ||
+                                            currentUser._id ===
+                                              (task.createdBy?._id ||
+                                                task.createdBy)) && (
+                                            <Tooltip>
+                                              <TooltipTrigger asChild>
+                                                <Button
+                                                  variant="ghost"
+                                                  size="icon"
+                                                  disabled={
+                                                    assignedByUser?._id ===
+                                                      assignedToUser?._id ||
+                                                    task.status === "Completed"
+                                                  }
+                                                  className="h-8 w-8 text-indigo-600 hover:bg-indigo-50"
+                                                  onClick={() =>
+                                                    openReassignDialog(task)
+                                                  }
+                                                >
+                                                  <Users className="h-4 w-4" />
+                                                </Button>
+                                              </TooltipTrigger>
+                                              <TooltipContent>
+                                                <p>Re-assign User</p>
+                                              </TooltipContent>
+                                            </Tooltip>
+                                          )}
+
+                                        {canDelete && (
+                                          <Tooltip>
+                                            <TooltipTrigger asChild>
+                                              <Button
+                                                variant="ghost"
+                                                disabled={
+                                                  currentUser?.role &&
+                                                  !["Owner", "Admin"].includes(
+                                                    currentUser.role.name,
+                                                  )
+                                                }
+                                                size="icon"
+                                                className="h-8 w-8 text-red-600 hover:bg-red-50"
+                                                onClick={() =>
+                                                  handleDeleteClick(task)
+                                                }
+                                              >
+                                                <Trash2 className="h-4 w-4" />
+                                              </Button>
+                                            </TooltipTrigger>
+                                            <TooltipContent>
+                                              <p>Delete Task</p>
+                                            </TooltipContent>
+                                          </Tooltip>
+                                        )}
+                                      </TooltipProvider>
+                                    </div>
+                                  </TableCell>
+                                )}
+                            </TableRow>
+                          );
+                        })}
+                    </TableBody>
+                  </Table>
+                  {tasksLoading ? (
+                    <div className="flex h-24 items-center justify-center w-full text-gray-500">
+                      Loading tasks...
+                    </div>
+                  ) : (
+                    allTasks.length === 0 && (
+                      <div className="h-24 flex items-center justify-center w-full text-gray-500">
+                        No recurring tasks found.
+                      </div>
+                    )
+                  )}
                 </div>
-              ) : (
-                allTasks.length === 0 && (
-                  <div className="h-24 flex items-center justify-center w-full text-gray-500">
-                    No recurring tasks found.
-                  </div>
-                )
-              )}
-            </div>
+              );
+            })()}
 
             {/* Backend Pagination */}
             <Pagination
