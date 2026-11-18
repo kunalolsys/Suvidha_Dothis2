@@ -28,6 +28,7 @@ import {
   updateRecurringTaskAssigneesFromSheet,
   updateDelegationTaskAssigneesFromSheet,
   hideTasksOfDeletedUsers,
+  bulkCreateDelegationFromRecurringSheet,
 } from '../controllers/taskController.js';
 import { reopenTask } from '../controllers/taskReopenController.js';
 
@@ -435,4 +436,9 @@ router.post(
   updateDelegationTaskAssigneesFromSheet,
 );
 router.patch("/hide-deleted-users-tasks", hideTasksOfDeletedUsers);
+router.post(
+  "/bulk-create-delegation-from-recurring",
+  upload.single("file"),
+  bulkCreateDelegationFromRecurringSheet,
+);
 export default router;

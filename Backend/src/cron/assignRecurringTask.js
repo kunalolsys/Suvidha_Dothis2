@@ -141,10 +141,18 @@ export const generateRecurringTasks = async (recurringTaskId = null) => {
         }
 
         // CHECK USER WORKSHIFT FOR TODAY
-        const assignedUser = await User.findById(task.assignedTo)
+        const assignedUser = await User.findOne({
+          _id: task.assignedTo,
+          isDeleted: { $ne: true },
+        })
           .populate("assignShift")
           .lean();
-
+        if (!assignedUser) {
+          console.log(
+            `⚠️ Skipping ${task.TaskId}: Assigned user ${task.assignedTo} is deleted or inactive`,
+          );
+          continue;
+        }
         if (!assignedUser?.assignShift) {
           console.log(
             `⚠️ Skipping ${task.TaskId}: No workshift for user ${task.assignedTo}`,

@@ -6719,3 +6719,297 @@ export const hideTasksOfDeletedUsers = handleAsync(async (req, res) => {
     },
   });
 });
+
+export const bulkCreateDelegationFromRecurringSheet = handleAsync(
+  async (req, res, next) => {
+    if (!req.file?.path && !req.file?.buffer) {
+      return next(new AppError("Please upload an Excel or CSV file", 400));
+    }
+
+    let workbook;
+    try {
+      const fileBuffer = req.file.buffer || fs.readFileSync(req.file.path);
+      workbook = XLSX.read(fileBuffer, { type: "buffer" });
+    } finally {
+      if (req.file?.path && fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
+    }
+
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    // raw: false se Excel/CSV cell ki exact text date ("14-11-2026") bina UTC shift ke milti hai
+    const rows = XLSX.utils.sheet_to_json(sheet, { defval: "", raw: false });
+
+    if (!rows.length) {
+      return next(new AppError("Uploaded sheet is empty", 400));
+    }
+
+    // Helper: Sheet date -> exact YYYY-MM-DD (Zero timezone shift)
+    const toDateStr = (val) => {
+      if (!val && val !== 0) return null;
+
+      if (typeof val === "number") {
+        const d = XLSX.SSF.parse_date_code(val);
+        return d
+          ? `${d.y}-${String(d.m).padStart(2, "0")}-${String(d.d).padStart(2, "0")}`
+          : null;
+      }
+
+      const str = String(val).trim();
+
+      // DD-MM-YYYY or DD/MM/YYYY (e.g., 14-11-2026)
+      const dmy = str.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+      if (dmy) {
+        return `${dmy[3]}-${dmy[2].padStart(2, "0")}-${dmy[1].padStart(2, "0")}`;
+      }
+
+      // YYYY-MM-DD (e.g., 2026-11-14)
+      const ymd = str.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+      if (ymd) {
+        return `${ymd[1]}-${ymd[2].padStart(2, "0")}-${ymd[3].padStart(2, "0")}`;
+      }
+
+      // DD-MM-YY or MM/DD/YY (e.g., 14-11-26 or 11/14/26)
+      const shortDate = str.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{2})$/);
+      if (shortDate) {
+        const [, p1, p2, yy] = shortDate;
+        const isDmy = str.includes("-") || Number(p1) > 12;
+        const day = isDmy ? p1 : p2;
+        const month = isDmy ? p2 : p1;
+        return `20${yy}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+      }
+
+      return null;
+    };
+
+    // 1. Collect Recurring IDs & User identifiers from sheet
+    const recurringIds = [
+      ...new Set(
+        rows
+          .map((r) =>
+            String(
+              r["Recurring ID"] ?? r.recurringId ?? r.recurring_id ?? "",
+            ).trim(),
+          )
+          .filter(Boolean),
+      ),
+    ];
+
+    const userKeys = [
+      ...new Set(
+        rows
+          .flatMap((r) => [
+            String(r["Assigned To"] ?? r.assignedTo ?? r.assigned_to ?? "")
+              .trim()
+              .toLowerCase(),
+            String(r["Assigned By"] ?? r.assignedBy ?? r.assigned_by ?? "")
+              .trim()
+              .toLowerCase(),
+          ])
+          .filter(Boolean),
+      ),
+    ];
+
+    // 2. Fetch matching RecurringTasks from DB
+    const recurringTasks = await Task.find({
+      isDeleted: { $ne: true },
+      taskType: "RecurringTask",
+      TaskId: { $in: recurringIds },
+    }).lean();
+
+    const recurringMap = new Map(
+      recurringTasks.map((t) => [String(t.TaskId).trim(), t]),
+    );
+
+    // 3. Fetch Users (by employeeCode, name, or email prefix like sourabh.choudhary)
+    const escapeRx = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const users = await User.find({
+      isDeleted: { $ne: true },
+      $or: [
+        {
+          employeeCode: {
+            $in: userKeys.map((k) => new RegExp(`^${escapeRx(k)}$`, "i")),
+          },
+        },
+        {
+          name: {
+            $in: userKeys.map(
+              (k) => new RegExp(`^${escapeRx(k.replace(/\./g, " "))}$`, "i"),
+            ),
+          },
+        },
+        {
+          email: {
+            $in: userKeys.map((k) => new RegExp(`^${escapeRx(k)}@`, "i")),
+          },
+        },
+      ],
+    })
+      .populate("assignShift")
+      .lean();
+
+    const userMap = new Map();
+    for (const u of users) {
+      if (u.employeeCode)
+        userMap.set(String(u.employeeCode).trim().toLowerCase(), u);
+      if (u.name) {
+        const n = u.name.trim().toLowerCase();
+        userMap.set(n, u);
+        userMap.set(n.replace(/\s+/g, "."), u);
+      }
+      if (u.email) {
+        const prefix = u.email.split("@")[0].trim().toLowerCase();
+        if (!userMap.has(prefix)) userMap.set(prefix, u);
+      }
+    }
+
+    const performedBy = req.cookies?.userId || req.user?._id || null;
+    const createdTasks = [];
+    const unmatchedRecurringRows = [];
+    const skippedRows = [];
+
+    // 4. Process each row
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const rowNumber = i + 2;
+
+      const recurringId = String(
+        row["Recurring ID"] ?? row.recurringId ?? row.recurring_id ?? "",
+      ).trim();
+      const assignedToRaw = String(
+        row["Assigned To"] ?? row.assignedTo ?? row.assigned_to ?? "",
+      ).trim();
+      const assignedByRaw = String(
+        row["Assigned By"] ?? row.assignedBy ?? row.assigned_by ?? "",
+      ).trim();
+      const startStr = toDateStr(
+        row["Start Date"] ?? row.startDate ?? row.start_date,
+      );
+      const endStr = toDateStr(
+        row["End Date"] ??
+          row.endDate ??
+          row.end_date ??
+          row["Due Date"] ??
+          startStr,
+      );
+
+      // Skip if Recurring ID does not exist in DB
+      const parentTask = recurringMap.get(recurringId);
+      if (!parentTask) {
+        unmatchedRecurringRows.push({
+          rowNumber,
+          recurringId: recurringId || null,
+          title: row.Title || "",
+          assignedTo: assignedToRaw,
+          assignedBy: assignedByRaw,
+          startDate: row["Start Date"] || null,
+          endDate: row["End Date"] || null,
+          reason: "Recurring task not found in DB",
+        });
+        continue;
+      }
+
+      const assignedToUser = userMap.get(assignedToRaw.toLowerCase());
+      const assignedByUser = userMap.get(assignedByRaw.toLowerCase());
+
+      if (!assignedToUser || !assignedByUser || !startStr || !endStr) {
+        skippedRows.push({
+          rowNumber,
+          recurringId,
+          assignedTo: assignedToRaw,
+          assignedBy: assignedByRaw,
+          reason: !assignedToUser
+            ? `Assigned To user '${assignedToRaw}' not found`
+            : !assignedByUser
+              ? `Assigned By user '${assignedByRaw}' not found`
+              : "Invalid Start/End Date",
+        });
+        continue;
+      }
+
+      // Exact sheet date parse karein (bina date change kiye)
+      const taskStartDate = parseDateIST(startStr);
+      const taskDueDate = parseDateIST(endStr);
+
+      if (assignedToUser.assignShift) {
+        const [startH, startM] = (assignedToUser.assignShift.startTime || "09:00")
+          .split(":")
+          .map(Number);
+        const [endH, endM] = (assignedToUser.assignShift.endTime || "18:00")
+          .split(":")
+          .map(Number);
+        taskStartDate.setHours(startH || 9, startM || 0, 0, 0);
+        taskDueDate.setHours(endH || 18, endM || 0, 0, 0);
+      } else {
+        taskStartDate.setHours(9, 0, 0, 0);
+        taskDueDate.setHours(18, 0, 0, 0);
+      }
+
+      const deptId = Array.isArray(assignedToUser.department)
+        ? assignedToUser.department[0]?._id || assignedToUser.department[0]
+        : assignedToUser.department?._id ||
+          assignedToUser.department ||
+          parentTask.departmentOfAssignToUser ||
+          null;
+
+      const startDay = normalizeDate(taskStartDate);
+      const dueDay = normalizeDate(taskDueDate);
+      const taskEndDays =
+        Math.floor(
+          (dueDay.getTime() - startDay.getTime()) / (1000 * 60 * 60 * 24),
+        ) + 1;
+
+      const taskEndTime = `${String(taskDueDate.getHours()).padStart(2, "0")}:${String(
+        taskDueDate.getMinutes(),
+      ).padStart(2, "0")}`;
+
+      const taskPayload = {
+        title: String(row.Title || parentTask.title).trim(),
+        description: String(
+          row.Description || parentTask.description || "",
+        ).trim(),
+        assignedTo: assignedToUser._id,
+        assignedBy: assignedByUser._id,
+        createdBy: performedBy || assignedByUser._id,
+        updatedBy: performedBy || assignedByUser._id,
+        departmentOfAssignToUser: deptId,
+        startDate: taskStartDate,
+        dueDate: taskDueDate,
+        plannedStartDate: taskStartDate,
+        plannedDueDate: taskDueDate,
+        taskEndDays,
+        taskEndTime,
+        checklist: (parentTask.checklist || []).map((c) => ({
+          text: c.text,
+          isCompleted: false,
+        })),
+        attachmentFile: parentTask.attachmentFile || [],
+        recurrenceTaskId: parentTask._id,
+        recurringRefId: parentTask.TaskId,
+        isVisible: true,
+      };
+
+      const newTask = new DelegationTask({
+        ...taskPayload,
+        status: calculateStatus({ ...taskPayload, completeStatus: false }),
+      });
+
+      await newTask.save();
+      createdTasks.push(newTask);
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: `${createdTasks.length} delegation task(s) created, ${unmatchedRecurringRows.length} unmatched recurring ID(s) skipped.`,
+      summary: {
+        totalRows: rows.length,
+        createdCount: createdTasks.length,
+        unmatchedRecurringCount: unmatchedRecurringRows.length,
+        otherSkippedCount: skippedRows.length,
+      },
+      createdTasks,
+      unmatchedRecurringRows,
+      skippedRows,
+    });
+  },
+);
