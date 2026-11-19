@@ -26,6 +26,8 @@ router.put("/roles/:id", roleController.updateRole);
 router.delete("/roles/:id", roleController.deleteRole);
 router.get("/roles/my-permissions", authenticateJWT, roleController.getMyPermissions);
 router.post("/migrate-permissions", migrateRolePermissions);
+router.get("/roles/user/:userId", authenticateJWT, roleController.getUserPermissions);
+router.put("/roles/user/:userId", authenticateJWT, roleController.updateUserPermissions);
 router.post(
   "/departments/list",
   authenticateJWT,

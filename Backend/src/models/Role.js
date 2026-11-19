@@ -121,7 +121,7 @@ const actionPermissionSchema = new mongoose.Schema(
   { _id: false },
 );
 
-const submodulePermissionSchema = new mongoose.Schema(
+export const submodulePermissionSchema = new mongoose.Schema(
   {
     parentModuleKey: {
       type: String,

@@ -42,8 +42,8 @@ export const getAllUsers = handleAsync(async (req, res, next) => {
     department,
     assignShift,
     search,
-    sortBy = "name",     // default: "name" (ya "createdAt" rakh sakte hain)
-    sortOrder = "asc",   // "asc" | "desc"
+    sortBy = "name", // default: "name" (ya "createdAt" rakh sakte hain)
+    sortOrder = "asc", // "asc" | "desc"
   } = req.body;
 
   const filter = { isDeleted: { $ne: true } };
@@ -214,19 +214,25 @@ export const exportUsers = handleAsync(async (req, res) => {
 
 export const getAllUserForDrops = handleAsync(async (req, res) => {
   const filter = { isDeleted: { $ne: true } };
-  // 🔥 NO PAGINATION HERE
+
   const superRole = await Role.findOne({
-    name: "Super",
+    name: { $regex: /^super$/i },
   }).select("_id");
 
   if (superRole) {
     filter.role = { $ne: superRole._id };
   }
+
   const users = await User.find(filter)
-    .select("department role assignShift name _id")
+    .select(
+      "department role assignShift name employeeCode customPermissions _id",
+    )
     .populate("department", "name")
     .populate("role", "name displayName")
-    .populate("assignShift");
+    .populate("assignShift")
+    .collation({ locale: "en", strength: 2 }) // Case-insensitive A-Z sorting
+    .sort({ name: 1 })
+    .lean();
 
   return res.status(200).json({
     success: true,
@@ -950,7 +956,9 @@ export const updateUsersCSV = handleAsync(async (req, res, next) => {
     });
   } catch (parseErr) {
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-    return next(new AppError("CSV file format parse karne mein error aaya.", 400));
+    return next(
+      new AppError("CSV file format parse karne mein error aaya.", 400),
+    );
   }
 
   if (fs.existsSync(filePath)) {
@@ -1016,7 +1024,11 @@ export const updateUsersCSV = handleAsync(async (req, res, next) => {
       row["Telegram Chat Id"] ||
       row["Telegram Chat ID"];
 
-    if (rawChatId === undefined || rawChatId === null || String(rawChatId).trim() === "") {
+    if (
+      rawChatId === undefined ||
+      rawChatId === null ||
+      String(rawChatId).trim() === ""
+    ) {
       skippedRows.push({
         ...row,
         "Skip Reason": "Is row mein chat_id khali hai.",
@@ -1026,7 +1038,11 @@ export const updateUsersCSV = handleAsync(async (req, res, next) => {
 
     // Floating-point ya scientific format se clean integer string banayein
     let cleanChatId = String(rawChatId).trim();
-    if (cleanChatId.includes("e") || cleanChatId.includes("E") || cleanChatId.includes(".")) {
+    if (
+      cleanChatId.includes("e") ||
+      cleanChatId.includes("E") ||
+      cleanChatId.includes(".")
+    ) {
       const parsedNum = Number(cleanChatId);
       if (!isNaN(parsedNum)) {
         cleanChatId = BigInt(Math.trunc(parsedNum)).toString();
@@ -1065,7 +1081,8 @@ export const updateUsersCSV = handleAsync(async (req, res, next) => {
     } catch (saveErr) {
       errorRows.push({
         ...row,
-        "Error Reason": saveErr.message || "Record update karne mein error aaya.",
+        "Error Reason":
+          saveErr.message || "Record update karne mein error aaya.",
       });
     }
   }
