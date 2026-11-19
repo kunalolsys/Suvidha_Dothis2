@@ -1162,6 +1162,7 @@ export const filterTasks = handleAsync(async (req, res) => {
       $or: [
         { title: { $regex: escapedSearch, $options: "i" } },
         { TaskId: { $regex: escapedSearch, $options: "i" } },
+        { description: { $regex: escapedSearch, $options: "i" } },
       ],
     });
   }
@@ -6044,7 +6045,9 @@ const parseSheetDateOnly = (rawDate) => {
   }
 
   // String jaise "2026-11-26 09" me se sirf "2026-11-26" nikalein
-  const datePart = String(rawDate).trim().split(/[\sT]+/)[0];
+  const datePart = String(rawDate)
+    .trim()
+    .split(/[\sT]+/)[0];
   if (!/^\d{4}-\d{2}-\d{2}$/.test(datePart)) return null;
 
   // IST 00:00:00 ke hisab se Date object (agar UTC chahiye to "+05:30" ki jagah "Z" kar dein)
@@ -6243,8 +6246,12 @@ export const logNov4MonthlyRecurringTasks = handleAsync(async (req, res) => {
 
   // 3. Console Logs (Dry-Run / Audit Log)
   console.log("==================================================");
-  console.log(`📋 LOG ONLY: Monthly Recurring Tasks for ${targetDateStr} (IST)`);
-  console.log(`Total Monthly Recurring Tasks Checked: ${monthlyRecurringTasks.length}`);
+  console.log(
+    `📋 LOG ONLY: Monthly Recurring Tasks for ${targetDateStr} (IST)`,
+  );
+  console.log(
+    `Total Monthly Recurring Tasks Checked: ${monthlyRecurringTasks.length}`,
+  );
   console.log(`Matched 4 Nov Monthly Recurring Tasks: ${matchedTasks.length}`);
   console.log("--------------------------------------------------");
 
@@ -6328,8 +6335,12 @@ export const updateMonthlyWeekWiseFromSheet = handleAsync(
 
     for (const [index, row] of rows.entries()) {
       const taskId = String(row.taskid || row.TaskId || "").trim();
-      const occurrenceRaw = String(row.occurrence || "").trim().toLowerCase();
-      const occurDayRaw = String(row.occurday || "").trim().toLowerCase();
+      const occurrenceRaw = String(row.occurrence || "")
+        .trim()
+        .toLowerCase();
+      const occurDayRaw = String(row.occurday || "")
+        .trim()
+        .toLowerCase();
 
       if (!taskId) {
         skippedRows.push({ row: index + 2, reason: "Missing taskid" });
@@ -6681,7 +6692,9 @@ export const updateDelegationTaskAssigneesFromSheet = handleAsync(
 export const hideTasksOfDeletedUsers = handleAsync(async (req, res) => {
   // 1. Fetch all active (non-deleted) user IDs and soft-deleted user IDs
   const [activeUsers, deletedUsers] = await Promise.all([
-    User.find({ isDeleted: { $ne: true } }).select("_id").lean(),
+    User.find({ isDeleted: { $ne: true } })
+      .select("_id")
+      .lean(),
     User.find({ isDeleted: true }).select("_id").lean(),
   ]);
 
@@ -6705,7 +6718,8 @@ export const hideTasksOfDeletedUsers = handleAsync(async (req, res) => {
 
   return res.status(200).json({
     success: true,
-    message: "Tasks assigned to deleted users have been hidden (isVisible: false)",
+    message:
+      "Tasks assigned to deleted users have been hidden (isVisible: false)",
     summary: {
       deletedUsersCount: deletedUserIds.length,
       delegationTasks: {
@@ -6932,7 +6946,9 @@ export const bulkCreateDelegationFromRecurringSheet = handleAsync(
       const taskDueDate = parseDateIST(endStr);
 
       if (assignedToUser.assignShift) {
-        const [startH, startM] = (assignedToUser.assignShift.startTime || "09:00")
+        const [startH, startM] = (
+          assignedToUser.assignShift.startTime || "09:00"
+        )
           .split(":")
           .map(Number);
         const [endH, endM] = (assignedToUser.assignShift.endTime || "18:00")
