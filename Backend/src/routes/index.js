@@ -22,6 +22,7 @@ import openFormImportRoutes from "./openFormImportRoutes.js";
 import taskExtensionRoutes from "./taskExtensionRoutes.js";
 
 import { moduleGate } from "../middleware/moduleGate.js";
+import { generateRecurringTasks } from "../cron/assignRecurringTask.js";
 
 const router = express.Router();
 
@@ -64,5 +65,21 @@ router.use("/task-buckets-req", taskBucketsReqRoutes);
 router.use("/fms-decision", decisionRoutes);
 router.use("/open-forms", openFormImportRoutes);
 router.use("/task-extension", taskExtensionRoutes);
+router.post("/trigger-recurring-cron", async (req, res, next) => {
+  try {
+    const recurringTaskId =
+      req.body?.recurringTaskId || req.query?.recurringTaskId || null;
 
+    await generateRecurringTasks(recurringTaskId);
+
+    return res.status(200).json({
+      success: true,
+      message: recurringTaskId
+        ? `Recurring task (${recurringTaskId}) cron executed successfully.`
+        : "All recurring tasks cron executed successfully.",
+    });
+  } catch (error) {
+    next(error);
+  }
+});
 export default router;

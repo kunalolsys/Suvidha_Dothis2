@@ -54,15 +54,12 @@ const isMonthlyWeekWiseMatch = (todayMoment, occurrence, weekDay) => {
   return currentOccurrence === targetOccurrence;
 };
 
-// Helper: Check if today matches the frequency criteria
 const isTaskDueToday = (task) => {
   // Always evaluate today in Asia/Kolkata timezone
   const today = moment().tz("Asia/Kolkata").startOf("day");
-  const start = task.startDate
-    ? moment(task.startDate).tz("Asia/Kolkata").startOf("day")
-    : null;
+  const start = moment(task.startDate).tz("Asia/Kolkata").startOf("day");
 
-  if (start && today.isBefore(start)) return false;
+  if (today.isBefore(start)) return false;
   if (
     task.endDate &&
     today.isAfter(moment(task.endDate).tz("Asia/Kolkata").endOf("day"))
@@ -71,15 +68,47 @@ const isTaskDueToday = (task) => {
   }
 
   switch (task.frequency) {
-    // ... baaki cases as-is ...
+    case "Daily":
+      return true;
+
+    case "Weekly": {
+      const currentDayName = today.format("dddd").toLowerCase();
+      return (
+        Array.isArray(task.weekDays) && task.weekDays.includes(currentDayName)
+      );
+    }
+
+    case "Bi-weekly": {
+      if (!task.weekStartDay) return false;
+
+      const days = [
+        "sunday",
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "saturday",
+      ];
+
+      const startDay = days.indexOf(task.weekStartDay.toLowerCase());
+      const offset = Number(task.repeatAfter || 0);
+
+      if (offset < 0 || offset > 6) return false;
+
+      const secondDay = (startDay + offset) % 7;
+      const todayDay = today.day();
+
+      return todayDay === startDay || todayDay === secondDay;
+    }
 
     case "Fortnightly": {
-      if (!start) return false;
       const daysDiff = today.diff(start, "days");
       return daysDiff % 14 === 0;
     }
 
     case "Monthly":
+      // New Frequency: Monthly Week-Wise (e.g., First Saturday, Last Monday)
       if (task.monthlyScheduleType === "week") {
         return isMonthlyWeekWiseMatch(
           today,
@@ -87,24 +116,21 @@ const isTaskDueToday = (task) => {
           task.monthlyWeekDay,
         );
       }
-      return start ? today.date() === start.date() : false;
+      // Old Working Logic: Monthly Date-Wise
+      return today.date() === start.date();
 
     case "Quarterly": {
-      if (!start) return false;
       const qDiff = today.diff(start, "months");
       return qDiff % 3 === 0 && today.date() === start.date();
     }
 
     case "Half Yearly": {
-      if (!start) return false;
       const hDiff = today.diff(start, "months");
       return hDiff % 6 === 0 && today.date() === start.date();
     }
 
     case "Yearly":
-      return start
-        ? today.month() === start.month() && today.date() === start.date()
-        : false;
+      return today.month() === start.month() && today.date() === start.date();
 
     default:
       return false;
