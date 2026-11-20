@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import {
+  exportRoleBasedTasksThunk,
   fetchMyTasks,
   fetchTaskCounts,
   getFilterTasks,
@@ -93,7 +94,7 @@ import { Label } from "../../components/ui/index.jsx";
 import dayjs from "dayjs";
 import TaskChat from "../../components/TaskChat.jsx";
 import { useSocket } from "../../context/SocketContext.jsx";
-import { Popover, Select as AntdSelect } from "antd";
+import { Popover, Select as AntdSelect, message } from "antd";
 
 // --- Helper Components ---
 
@@ -423,7 +424,7 @@ const FilterBar = ({
 
       <div className="flex flex-col sm:flex-row gap-2 flex-[2]">
         {/* All Sr. Managers Filter */}
-        <Select
+        {/* <Select
           value={selectedSrManager}
           onValueChange={(val) => handleFilterChange(setSelectedSrManager, val)}
         >
@@ -440,10 +441,10 @@ const FilterBar = ({
               </SelectItem>
             ))}
           </SelectContent>
-        </Select>
+        </Select> */}
 
         {/* All Managers Filter */}
-        <Select
+        {/* <Select
           value={selectedManager}
           onValueChange={(val) => handleFilterChange(setSelectedManager, val)}
         >
@@ -460,7 +461,7 @@ const FilterBar = ({
               </SelectItem>
             ))}
           </SelectContent>
-        </Select>
+        </Select> */}
 
         {/* All Doers Filter */}
         <AntdSelect
@@ -644,6 +645,33 @@ const PCView = () => {
   const [reopenLoading, setReopenLoading] = useState(false);
   const [refreshTaskAfterReopen, setRefreshTaskAfterReopen] = useState(false);
 
+  // Server-side Sorting State
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: "asc" });
+
+  // Toggle Handler (Triggers backend refetch and resets page to 1)
+  const handleSort = (columnKey) => {
+    let direction = "asc";
+    if (sortConfig.key === columnKey && sortConfig.direction === "asc") {
+      direction = "desc";
+    }
+    setSortConfig({ key: columnKey, direction });
+    setLocalCurrentPage(1);
+  };
+
+  // Helper for Header Sort Icons
+  const getSortIcon = (columnKey) => {
+    if (sortConfig.key !== columnKey) {
+      return (
+        <ArrowUpDown className="h-3.5 w-3.5 text-gray-400 opacity-60 ml-1 inline" />
+      );
+    }
+    return sortConfig.direction === "asc" ? (
+      <ArrowUp className="h-3.5 w-3.5 text-blue-600 ml-1 inline" />
+    ) : (
+      <ArrowDown className="h-3.5 w-3.5 text-blue-600 ml-1 inline" />
+    );
+  };
+
   const handleReopenTask = async () => {
     if (!reopenReason.trim()) {
       toast.error("Please enter reopen reason");
@@ -815,7 +843,7 @@ const PCView = () => {
   };
   const departmentId = getDepartmentIds(currentUser?.department);
 
-  // ⚡ SERVER-SIDE FETCH TRIGGER PASSING taskTypeFilter
+  // ⚡ SERVER-SIDE FETCH TRIGGER PASSING taskTypeFilter AND sortConfig
   useEffect(() => {
     if (currentUser?._id) {
       dispatch(
@@ -830,6 +858,10 @@ const PCView = () => {
           selectedSrManager,
           search: debouncedSearch,
           taskTypeFilter: engineViewTab, // 👈 PASSES SUB-TAB TO BACKEND
+          ...(sortConfig.key && {
+            sortBy: sortConfig.key,
+            sortOrder: sortConfig.direction,
+          }),
           filters: {
             stat: selectedStatFilter || null,
             taskCategory: selectedStatFilter
@@ -862,6 +894,7 @@ const PCView = () => {
     debouncedSearch,
     reopenLoading,
     refreshTaskAfterReopen,
+    sortConfig,
   ]);
 
   // ⚡ DYNAMIC HEADERS FOR FMS SUBMISSION DATA (isTableColumn === true)
@@ -920,97 +953,44 @@ const PCView = () => {
   };
 
   const handleExport = async () => {
-    setIsExporting(true);
     try {
-      const dataToExport = fetchedTasks.map((task, index) => ({
-        "Sr. No.": (localCurrentPage - 1) * localItemsPerPage + index + 1,
-        "Task ID": task.TaskId || "-",
-        "Task Title": task.title || "-",
-        "Assigned To": task.assignedTo?.name || "-",
-        Description: task.description || "-",
-        Type: task.taskType || "-",
-        Attachment: task.attachmentFile ? "Yes" : "No",
-        "Start Date": task.startDate
-          ? new Date(task.startDate).toLocaleDateString()
-          : "-",
-        "Due Date": task.dueDate
-          ? new Date(task.dueDate).toLocaleDateString()
-          : "-",
-        Status: task.status || "-",
-      }));
+      setIsExporting(true);
 
-      if (dataToExport.length === 0) {
-        toast.warning("No data to export");
-        return;
-      }
+      await dispatch(
+        exportRoleBasedTasksThunk({
+          userId: currentUser._id,
+          role: currentUser.role?.name,
+          departmentId: departmentId,
+          selectedDoer: selectedDoer || null,
+          selectedManager: selectedManager || null,
+          selectedSrManager: selectedSrManager || null,
+          search: debouncedSearch || searchTerm || "",
+          taskTypeFilter: engineViewTab,
+          filters: {
+            stat: selectedStatFilter || null,
+            taskCategory: selectedStatFilter
+              ? null
+              : activeTab === "today"
+                ? "today_backlog"
+                : activeTab === "upcoming"
+                  ? "upcoming"
+                  : activeTab === "completed"
+                    ? "completed"
+                    : null,
+            status:
+              selectedFilterStatus === "all" ? null : selectedFilterStatus,
+          },
+        }),
+      ).unwrap();
 
-      const ws = XLSX.utils.json_to_sheet(dataToExport);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "ManagerTasks");
-      const timestamp = new Date().toISOString().split("T")[0];
-      XLSX.writeFile(wb, `ManagerTasks_${timestamp}.xlsx`);
-      toast.success("Export completed successfully");
-    } catch (error) {
-      console.error("Export error:", error);
-      toast.error("Failed to export data");
+      message.success("Tasks exported successfully!");
+    } catch (err) {
+      message.error("Failed to export tasks");
     } finally {
       setIsExporting(false);
     }
   };
-  const [sortConfig, setSortConfig] = useState({ key: null, direction: "asc" });
 
-  // 2. Click Handler (Toggle Ascending / Descending)
-  const handleSort = (columnKey) => {
-    let direction = "asc";
-    if (sortConfig.key === columnKey && sortConfig.direction === "asc") {
-      direction = "desc";
-    }
-    setSortConfig({ key: columnKey, direction });
-  };
-
-  // 3. Helper for Header Sort Icons
-  const getSortIcon = (columnKey) => {
-    if (sortConfig.key !== columnKey) {
-      return (
-        <ArrowUpDown className="h-3.5 w-3.5 text-gray-400 opacity-60 ml-1 inline" />
-      );
-    }
-    return sortConfig.direction === "asc" ? (
-      <ArrowUp className="h-3.5 w-3.5 text-blue-600 ml-1 inline" />
-    ) : (
-      <ArrowDown className="h-3.5 w-3.5 text-blue-600 ml-1 inline" />
-    );
-  };
-
-  // 4. Sorted Data Array
-  const sortedTasks = useMemo(() => {
-    const list = [...(fetchedTasks || [])];
-
-    if (!sortConfig.key) return list;
-
-    return list.sort((a, b) => {
-      // Status string comparison
-      if (sortConfig.key === "status") {
-        const valA = (a.status || "").toLowerCase();
-        const valB = (b.status || "").toLowerCase();
-        return sortConfig.direction === "asc"
-          ? valA.localeCompare(valB)
-          : valB.localeCompare(valA);
-      }
-
-      // Date comparison (startDate / dueDate)
-      const valA = a[sortConfig.key]
-        ? new Date(a[sortConfig.key]).getTime()
-        : 0;
-      const valB = b[sortConfig.key]
-        ? new Date(b[sortConfig.key]).getTime()
-        : 0;
-
-      if (valA < valB) return sortConfig.direction === "asc" ? -1 : 1;
-      if (valA > valB) return sortConfig.direction === "asc" ? 1 : -1;
-      return 0;
-    });
-  }, [fetchedTasks, sortConfig]);
   // --- Dynamic Table Headers ---
   const CommonTableHeaders = () => (
     <TableHeader>
@@ -1171,14 +1151,20 @@ const PCView = () => {
           </div>
         </TableCell>
         <TableCell>
-          <Button
-            variant="link"
-            className="p-0 h-auto text-blue-600"
-            onClick={() => handleViewDescription(task.description)}
-            disabled={!task.description}
-          >
-            View
-          </Button>
+          {task.description ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <p className="max-w-[200px] truncate text-sm text-gray-700 cursor-default">
+                  {task.description}
+                </p>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs break-words whitespace-pre-wrap">
+                <p>{task.description}</p>
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <span className="text-gray-400 text-sm">-</span>
+          )}
         </TableCell>
 
         {/* ⚡ RENDER DYNAMIC CELLS FOR FMS SUBMISSION DATA */}
@@ -1213,7 +1199,7 @@ const PCView = () => {
             <span className="text-sm font-medium text-gray-900">
               {task.assignedBy?.name || "-"}
             </span>
-            {assignedByUser?.name && (
+            {/* {assignedByUser?.name && (
               <span
                 className={`text-xs px-2 py-0.5 rounded-full w-fit font-medium ${
                   assignedByUser.role?.name === "admin"
@@ -1229,7 +1215,7 @@ const PCView = () => {
               >
                 {assignedByUser.role?.name}
               </span>
-            )}
+            )} */}
           </div>
         </TableCell>
         <TableCell>
@@ -1238,7 +1224,7 @@ const PCView = () => {
               {task.assignedTo?.name || "-"}
             </span>
 
-            {assignedToUser?.name && (
+            {/* {assignedToUser?.name && (
               <span
                 className={`text-xs px-2 py-0.5 rounded-full w-fit font-medium ${
                   assignedToUser.role?.name === "admin"
@@ -1254,7 +1240,7 @@ const PCView = () => {
               >
                 {assignedToUser.role?.name}
               </span>
-            )}
+            )} */}
           </div>
         </TableCell>
         <TableCell>
@@ -1403,9 +1389,9 @@ const PCView = () => {
         <Table>
           <CommonTableHeaders />
           <TableBody>
-            {/* 🟢 Using sortedTasks instead of fetchedTasks */}
-            {sortedTasks.length > 0 ? (
-              sortedTasks.map((task, index) => renderCommonRow(task, index))
+            {/* 🟢 Directly using backend-sorted fetchedTasks */}
+            {Array.isArray(fetchedTasks) && fetchedTasks.length > 0 ? (
+              fetchedTasks.map((task, index) => renderCommonRow(task, index))
             ) : (
               <TableRow>
                 <TableCell
@@ -1464,7 +1450,7 @@ const PCView = () => {
               showExport={true}
               onExport={handleExport}
               isExporting={isExporting}
-              doers={doers}
+              doers={allUsers}
               selectedDoer={selectedDoer}
               setSelectedDoer={setSelectedDoer}
               managers={managers}

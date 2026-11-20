@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import mongoose from "mongoose";
 import Counter from "./Counter.js";
+import { submodulePermissionSchema } from "./Role.js";
 
 const userSchema = new mongoose.Schema(
   {
@@ -73,6 +74,10 @@ const userSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Role",
       required: true,
+    },
+    customPermissions: {
+      type: [submodulePermissionSchema],
+      default: [],
     },
     reportingManager: {
       type: mongoose.Schema.Types.ObjectId,

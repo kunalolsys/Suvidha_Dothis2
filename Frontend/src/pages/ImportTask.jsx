@@ -30,7 +30,7 @@ const ImportTask = () => {
   const attachmentFileInputRef = useRef(null);
   const attachmentFolderInputRef = useRef(null);
 
-  const templates = {
+ const templates = {
     delegation: {
       name: "Delegation Task",
       subtitle: "Independent",
@@ -44,12 +44,13 @@ const ImportTask = () => {
         { name: "Assign To(Email)", type: "Text", required: true },
         { name: "Assign To(Name)", type: "Text", required: false },
         { name: "Assign To UserDepartment", type: "Text", required: true },
+        { name: "Assign By Employee Code", type: "Text", required: true },
         { name: "Check List", type: "Optional", required: false },
         { name: "Start Date", type: "DD-MM-YYYY", required: true },
         { name: "Due Date", type: "DD-MM-YYYY", required: true },
         { name: "Attachment File", type: "File", required: false }
       ],
-      demoData: ["Sample Delegation Task", "Description...", "user@example.com", "John", "Engineering", '"item1,item2"', "01-08-2024", "10-08-2024", "file.pdf"]
+      demoData: ["Sample Delegation Task", "Description...", "user@example.com", "John", "Engineering", "EMP001", '"item1,item2"', "01-08-2024", "10-08-2024", "file.pdf"]
     },
     recurring: {
       name: "Recurring Task",
@@ -64,6 +65,7 @@ const ImportTask = () => {
         { name: "Assign To(Email)", type: "Text", required: true },
         { name: "Assign To(Name)", type: "Text", required: false },
         { name: "Assign To UserDepartment", type: "Text", required: true },
+        { name: "Assign By Employee Code", type: "Text", required: true },
         { name: "Check List", type: "Optional", required: false },
         { name: "Start Date", type: "DD-MM-YYYY", required: true },
         { name: "Frequency", type: "Text (Daily, Weekly, etc.)", required: true, options: ["Daily", "Weekly", "etc"] },
@@ -71,7 +73,7 @@ const ImportTask = () => {
         { name: "End Date", type: "DD-MM-YYYY", required: true },
         { name: "Attachment File", type: "File", required: false }
       ],
-      demoData: ["Recurring Task", "Desc...", "user@example.com", "John", "Eng", '"itemA,itemB"', "01-08-2024", "Weekly", '"Monday,Wednesday,Friday"', "31-12-2024", "file.docx"]
+      demoData: ["Recurring Task", "Desc...", "user@example.com", "John", "Eng", "EMP001", '"itemA,itemB"', "01-08-2024", "Weekly", '"Monday,Wednesday,Friday"', "31-12-2024", "file.docx"]
     },
     dependent: {
       name: "Dependent Task",
@@ -87,13 +89,14 @@ const ImportTask = () => {
         { name: "Assign To(Email)", type: "Text", required: true },
         { name: "Assign To(Name)", type: "Text", required: false },
         { name: "Assign To UserDepartment", type: "Text", required: true },
+        { name: "Assign By Employee Code", type: "Text", required: true },
         { name: "Check List", type: "Optional", required: false },
         { name: "Start Time Setting", type: "Planned to Planned / Actual to Planned", required: true },
         { name: "Frequency", type: "T+X days / T+X hours", required: true, value: "T+X days" },
         { name: "X Value", type: "Number", required: true },
         { name: "Attachment File", type: "File", required: false }
       ],
-      demoData: ["25120001", "Dependent Task", "Desc...", "user@example.com", "John", "Eng", '"item1,item2"', "Planned to Planned", "T+X days", "2", ""]
+      demoData: ["25120001", "Dependent Task", "Desc...", "user@example.com", "John", "Eng", "EMP001", '"item1,item2"', "Planned to Planned", "T+X days", "2", ""]
     }
   };
 

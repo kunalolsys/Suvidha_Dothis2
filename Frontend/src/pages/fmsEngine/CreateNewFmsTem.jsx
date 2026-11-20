@@ -47,7 +47,13 @@ import { ScrollArea, ScrollBar } from "../../components/ui/scroll-area";
 // Modals
 import ChecklistModal from "../../components/ChecklistModal";
 import CustomFormModal from "../../components/CustomFormModal";
-import { DatePicker, Divider, Popconfirm, Spin } from "antd";
+import {
+  DatePicker,
+  Divider,
+  Popconfirm,
+  Spin,
+  Select as AntdSelect,
+} from "antd";
 import dayjs from "dayjs";
 import { Badge } from "../../components/ui";
 import api from "../../lib/api";
@@ -243,9 +249,9 @@ const CreateNewFmsTem = () => {
             validationErrors.push(`Row ${row}: Description required`);
           }
 
-          if (!task.dept) {
-            validationErrors.push(`Row ${row}: Department required`);
-          }
+          // if (!task.dept) {
+          //   validationErrors.push(`Row ${row}: Department required`);
+          // }
 
           if (!task.doer) {
             validationErrors.push(`Row ${row}: Assigned user required`);
@@ -296,7 +302,7 @@ const CreateNewFmsTem = () => {
               fmsTemplateId: templateId,
               taskId: task.taskId,
               description: task.description,
-              departmentOfAssignToUser: task.dept,
+              // departmentOfAssignToUser: task.dept,
               assignedTo: task.doer,
               frequency: task.frequency || "None",
               linkedWithForm: task.linkedWithForm === "yes",
@@ -600,7 +606,7 @@ const CreateNewFmsTem = () => {
         fmsTemplateId: templateId,
         taskId: task.taskId,
         description: task.description,
-        departmentOfAssignToUser: task.dept,
+        // departmentOfAssignToUser: task.dept,
         assignedTo: task.doer,
         frequency: task.frequency || "None",
         linkedWithForm: task.linkedWithForm === "yes",
@@ -863,7 +869,7 @@ const CreateNewFmsTem = () => {
                       <TableRow>
                         <TableHead className="w-[180px]">Task Id</TableHead>
                         <TableHead className="w-[300px]">Description</TableHead>
-                        <TableHead className="w-[140px]">Department</TableHead>
+                        {/* <TableHead className="w-[140px]">Department</TableHead> */}
                         <TableHead className="w-[140px]">Doer</TableHead>
                         <TableHead className="w-[120px]">
                           Is Dependent?
@@ -932,7 +938,7 @@ const CreateNewFmsTem = () => {
                                   }
                                 />
                               </TableCell>
-                              <TableCell>
+                              {/* <TableCell>
                                 <Select
                                   disabled={!isEditable}
                                   value={task.dept}
@@ -951,37 +957,29 @@ const CreateNewFmsTem = () => {
                                     ))}
                                   </SelectContent>
                                 </Select>
-                              </TableCell>
+                              </TableCell> */}
                               <TableCell>
-                                <Select
-                                  disabled={!isEditable || !task.dept}
-                                  value={task.doer}
-                                  onValueChange={(v) =>
+                                <AntdSelect
+                                  showSearch
+                                  disabled={!isEditable}
+                                  value={task.doer || undefined}
+                                  placeholder="Select user"
+                                  optionFilterProp="label"
+                                  onChange={(v) =>
                                     handleTaskChange(index, "doer", v)
                                   }
-                                >
-                                  <SelectTrigger className="w-[90px]">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {filteredUser
-                                      .filter((u) =>
-                                        task.dept
-                                          ? u.department?.some(
-                                              (d) =>
-                                                String(d._id) ===
-                                                String(task.dept),
-                                            )
-                                          : true,
-                                      )
-                                      .slice(0, 10)
-                                      .map((u) => (
-                                        <SelectItem key={u._id} value={u._id}>
-                                          {u.name}
-                                        </SelectItem>
-                                      ))}
-                                  </SelectContent>
-                                </Select>
+                                  className="w-[140px]"
+                                  popupMatchSelectWidth={200}
+                                  filterOption={(input, option) =>
+                                    (option?.label ?? "")
+                                      .toLowerCase()
+                                      .includes(input.toLowerCase())
+                                  }
+                                  options={allUsers.map((u) => ({
+                                    value: u._id,
+                                    label: u.name,
+                                  }))}
+                                />
                               </TableCell>
 
                               <TableCell>

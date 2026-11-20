@@ -13,6 +13,8 @@ export const fetchUsers = createAsyncThunk(
         selectedDepartment = [],
         selectedShift = "",
         debouncedSearch = "",
+        sortBy = "name",
+        sortOrder = "asc",
       } = params;
 
       const payload = {
@@ -28,6 +30,8 @@ export const fetchUsers = createAsyncThunk(
         assignShift:
           selectedShift == "all" ? undefined : selectedShift || undefined,
         search: debouncedSearch || undefined,
+        sortBy,
+        sortOrder,
       };
 
       const response = await api.post("/setup/users/list", payload);

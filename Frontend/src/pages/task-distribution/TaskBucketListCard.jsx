@@ -55,6 +55,13 @@ const STATUS_META = {
     icon: CheckCircle2,
     label: "Distributed",
   },
+  "Partially Distributed": {
+    color: T.amber,
+    bg: T.amberL,
+    border: T.amberB,
+    icon: AlertCircle,
+    label: "Partially Distributed",
+  },
   Pending: {
     color: T.amber,
     bg: T.amberL,
@@ -159,9 +166,15 @@ const BucketCard = ({
 
   const isRole = bucket.assignmentMode === "Role";
 
+  const rawRoleName =
+    bucket.targetRole?.displayName || bucket.targetRole?.name || "";
+  const formattedRole = rawRoleName
+    ? rawRoleName.charAt(0).toUpperCase() + rawRoleName.slice(1)
+    : "-";
+
   const audienceLabel = isRole
-    ? bucket.targetRole?.name || "Role"
-    : `${bucket.targetUsers?.length || 0} user${
+    ? formattedRole
+    : `${bucket.targetUsers?.length || 0} User${
         bucket.targetUsers?.length !== 1 ? "s" : ""
       }`;
 

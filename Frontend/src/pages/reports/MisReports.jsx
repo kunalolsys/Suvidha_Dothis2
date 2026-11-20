@@ -231,7 +231,7 @@ const MisReports = () => {
 
           {/* SR MANAGER */}
 
-          <div className="min-w-[180px]">
+          {/* <div className="min-w-[180px]">
             <label className="text-xs text-gray-500">Sr Manager</label>
 
             <Select
@@ -252,11 +252,11 @@ const MisReports = () => {
                 ))}
               </SelectContent>
             </Select>
-          </div>
+          </div> */}
 
           {/* MANAGER */}
 
-          <div className="min-w-[180px]">
+          {/* <div className="min-w-[180px]">
             <label className="text-xs text-gray-500">Manager</label>
 
             <Select value={selectedManager} onValueChange={setSelectedManager}>
@@ -274,7 +274,7 @@ const MisReports = () => {
                 ))}
               </SelectContent>
             </Select>
-          </div>
+          </div> */}
 
           {/* MEMBER */}
 

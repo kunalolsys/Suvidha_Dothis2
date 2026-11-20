@@ -94,7 +94,7 @@ import { Label } from "../../components/ui/index.jsx";
 import dayjs from "dayjs";
 import TaskChat from "../../components/TaskChat.jsx";
 import { useSocket } from "../../context/SocketContext.jsx";
-import { message, Popover } from "antd";
+import { message, Popover, Skeleton } from "antd";
 import { Select as AntdSelect } from "antd";
 
 // Priority Badge
@@ -176,6 +176,7 @@ const TodayTaskActions = ({
   const isCompleteActiveTab = activeTab === "completed";
   const alreadyReopened = task?.isReopen;
   const fmsType = task.taskType === "FmsInstanceTask";
+  const bucketStatus = task?.bucketId?.status;
 
   return (
     <TooltipProvider>
@@ -252,26 +253,34 @@ const TodayTaskActions = ({
         {isCompleteActiveTab && !fmsType && (
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                disabled={alreadyReopened}
-                onClick={() => {
-                  setReopenTask(task);
-                  setReopenModalOpen(true);
-                }}
-                className={`h-8 w-8 cursor-pointer ${
-                  alreadyReopened
-                    ? "text-gray-400 cursor-not-allowed"
-                    : "text-yellow-600 hover:bg-yellow-50"
-                }`}
-              >
-                <RotateCcw className="h-4 w-4" />
-              </Button>
+              <span className="inline-flex">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  disabled={alreadyReopened || bucketStatus === "Completed"}
+                  onClick={() => {
+                    setReopenTask(task);
+                    setReopenModalOpen(true);
+                  }}
+                  className={`h-8 w-8 ${
+                    alreadyReopened || bucketStatus === "Completed"
+                      ? "text-gray-400 cursor-not-allowed"
+                      : "text-yellow-600 hover:bg-yellow-50 cursor-pointer"
+                  }`}
+                >
+                  <RotateCcw className="h-4 w-4" />
+                </Button>
+              </span>
             </TooltipTrigger>
 
             <TooltipContent>
-              <p>{alreadyReopened ? "Task already reopened" : "Reopen Task"}</p>
+              <p>
+                {bucketStatus === "Completed"
+                  ? "Cannot reopen: Task Bucket is already completed"
+                  : alreadyReopened
+                    ? "Task already reopened"
+                    : "Reopen Task"}
+              </p>
             </TooltipContent>
           </Tooltip>
         )}
@@ -387,7 +396,7 @@ const FilterBar = ({
   searchTerm,
   setSearchTerm,
   selectedFilterStatus,
-  onFilterStatusChange, // 🟢 SYNCHRONIZED STATUS CHANGE
+  onFilterStatusChange,
   showExport = false,
   onExport,
   isExporting,
@@ -411,10 +420,6 @@ const FilterBar = ({
     setter(value);
   };
 
-  const userRole = currentUser?.role?.name;
-  const isAdminOrOwner = userRole === "Admin" || userRole === "Owner";
-  const isSrManager = userRole === "Sr. Manager";
-
   return (
     <div className="flex flex-col md:flex-row gap-3 p-4 bg-gray-50 rounded-lg border">
       <div className="relative flex-1">
@@ -428,48 +433,6 @@ const FilterBar = ({
       </div>
 
       <div className="flex flex-col sm:flex-row gap-2 flex-[2]">
-        {/* {isAdminOrOwner && (
-          <Select
-            value={selectedSrManager}
-            onValueChange={(val) =>
-              handleFilterChange(setSelectedSrManager, val)
-            }
-          >
-            <SelectTrigger className="w-full bg-white">
-              <SelectValue placeholder="All Sr. Managers" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all" className="font-semibold text-purple-700">
-                All Sr. Managers
-              </SelectItem>
-              {srManagers.map((srManager) => (
-                <SelectItem key={srManager._id} value={srManager._id}>
-                  {srManager.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )} */}
-        {/* {(isAdminOrOwner || isSrManager) && (
-          <Select
-            value={selectedManager}
-            onValueChange={(val) => handleFilterChange(setSelectedManager, val)}
-          >
-            <SelectTrigger className="w-full bg-white">
-              <SelectValue placeholder="All Managers" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all" className="font-semibold text-green-700">
-                All Managers
-              </SelectItem>
-              {managers.map((manager) => (
-                <SelectItem key={manager._id} value={manager._id}>
-                  {manager.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )} */}
         <AntdSelect
           showSearch
           allowClear
@@ -489,7 +452,7 @@ const FilterBar = ({
         />
         <Select
           value={selectedFilterStatus}
-          onValueChange={onFilterStatusChange} // 🟢 SYNCHRONIZED DROPDOWN CALL
+          onValueChange={onFilterStatusChange}
         >
           <SelectTrigger className="w-full bg-white">
             <SelectValue placeholder="All Statuses" />
@@ -503,7 +466,7 @@ const FilterBar = ({
             <SelectItem value="Reopened">Re-opened</SelectItem>
           </SelectContent>
         </Select>
-        {engineViewTab == "fms" && (
+        {engineViewTab === "fms" && (
           <Select
             value={selectedTemplate}
             onValueChange={(val) => setSelectedTemplate(val)}
@@ -636,7 +599,7 @@ const ManagerView = () => {
   const [selectedAssignor, setSelectedAssignor] = useState("all");
   const [activeTab, setActiveTab] = useState("today");
 
-  // ⚡ SUB-TAB FILTER ("all" | "dothis" | "fms")
+  // SUB-TAB FILTER ("all" | "dothis" | "fms")
   const [engineViewTab, setEngineViewTab] = useState("all");
 
   const [selectedStatFilter, setSelectedStatFilter] = useState(null);
@@ -676,7 +639,34 @@ const ManagerView = () => {
   const [selectedTemplate, setSelectedTemplate] = useState("all");
   const [loading, setLoading] = useState(false);
 
-  // 🟢 BIDIRECTIONAL SYNCHRONIZATION: DROPDOWN SELECT -> STATS CARD SELECTION
+  // Server-side Sorting State
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: "asc" });
+
+  // Toggle Handler (Triggers backend refetch and resets page to 1)
+  const handleSort = (columnKey) => {
+    let direction = "asc";
+    if (sortConfig.key === columnKey && sortConfig.direction === "asc") {
+      direction = "desc";
+    }
+    setSortConfig({ key: columnKey, direction });
+    setLocalCurrentPage(1);
+  };
+
+  // Dynamic Sort Icon
+  const getSortIcon = (columnKey) => {
+    if (sortConfig.key !== columnKey) {
+      return (
+        <ArrowUpDown className="h-3.5 w-3.5 text-gray-400 opacity-60 ml-1 inline" />
+      );
+    }
+    return sortConfig.direction === "asc" ? (
+      <ArrowUp className="h-3.5 w-3.5 text-blue-600 ml-1 inline" />
+    ) : (
+      <ArrowDown className="h-3.5 w-3.5 text-blue-600 ml-1 inline" />
+    );
+  };
+
+  // BIDIRECTIONAL SYNCHRONIZATION: DROPDOWN SELECT -> STATS CARD SELECTION
   const handleDropdownStatusChange = (val) => {
     setSelectedFilterStatus(val);
     setLocalCurrentPage(1);
@@ -730,10 +720,6 @@ const ManagerView = () => {
 
     fetchTemplates();
   }, [currentUser, selectedDoer, selectedManager, selectedSrManager]);
-
-  const handleFilterChange = (setter, val) => {
-    setter(val);
-  };
 
   const handleReopenTask = async () => {
     if (!reopenReason.trim()) {
@@ -851,7 +837,6 @@ const ManagerView = () => {
         const users = response.data?.data || [];
         setAllUsers(users);
 
-        const doers = users.filter((u) => u.role?.name === "member");
         const managers = users.filter((u) => u.role?.name === "manager");
         const srManagers = users.filter((u) => u.role?.name === "sr._manager");
 
@@ -869,7 +854,7 @@ const ManagerView = () => {
     }
   }, [currentUser]);
 
-  // 🟢 BIDIRECTIONAL SYNCHRONIZATION: STATS CARD CLICK -> DROPDOWN SELECTION
+  // BIDIRECTIONAL SYNCHRONIZATION: STATS CARD CLICK -> DROPDOWN SELECTION
   const handleStatClick = (statType) => {
     if (statType === "dueToday" || statType === "overdue") {
       setSelectedStatFilter(statType);
@@ -913,7 +898,7 @@ const ManagerView = () => {
   };
   const departmentId = getDepartmentIds(currentUser?.department);
 
-  // ⚡ SERVER-SIDE FETCH TRIGGER PASSING taskTypeFilter
+  // SERVER-SIDE FETCH TRIGGER PASSING taskTypeFilter AND sortConfig
   useEffect(() => {
     if (currentUser?._id) {
       dispatch(
@@ -929,6 +914,10 @@ const ManagerView = () => {
           search: debouncedSearch,
           selectedTemplate,
           taskTypeFilter: engineViewTab,
+          ...(sortConfig.key && {
+            sortBy: sortConfig.key,
+            sortOrder: sortConfig.direction,
+          }),
           filters: {
             stat: selectedStatFilter || null,
             taskCategory: selectedStatFilter
@@ -962,9 +951,10 @@ const ManagerView = () => {
     reopenLoading,
     selectedTemplate,
     refreshTaskAfterReopen,
+    sortConfig,
   ]);
 
-  // ⚡ DYNAMIC HEADERS FOR FMS SUBMISSION DATA
+  // DYNAMIC HEADERS FOR FMS SUBMISSION DATA
   const dynamicFmsHeaders = useMemo(() => {
     const headersMap = new Map();
 
@@ -1017,6 +1007,7 @@ const ManagerView = () => {
     setFullDescription(desc);
     setIsDescriptionDialogOpen(true);
   };
+
   const handleExport = async () => {
     try {
       setIsExporting(true);
@@ -1049,7 +1040,6 @@ const ManagerView = () => {
         }),
       ).unwrap();
 
-      // Success feedback
       message.success("Tasks exported successfully!");
     } catch (err) {
       message.error("Failed to export tasks");
@@ -1057,160 +1047,97 @@ const ManagerView = () => {
       setIsExporting(false);
     }
   };
-  // const handleExport = async () => {
-  //   setIsExporting(true);
-  //   try {
-  //     const dataToExport = fetchedTasks.map((task, index) => ({
-  //       "Sr. No.": (localCurrentPage - 1) * localItemsPerPage + index + 1,
-  //       "Task ID": task.TaskId || "-",
-  //       "Task Title": task.title || "-",
-  //       "Assigned To": task.assignedTo?.name || "-",
-  //       Description: task.description || "-",
-  //       Type: task.taskType || "-",
-  //       Attachment: task.attachmentFile ? "Yes" : "No",
-  //       "Start Date": task.startDate
-  //         ? new Date(task.startDate).toLocaleDateString()
-  //         : "-",
-  //       "Due Date": task.dueDate
-  //         ? new Date(task.dueDate).toLocaleDateString()
-  //         : "-",
-  //       Status: task.status || "-",
-  //     }));
-
-  //     if (dataToExport.length === 0) {
-  //       toast.warning("No data to export");
-  //       return;
-  //     }
-
-  //     const ws = XLSX.utils.json_to_sheet(dataToExport);
-  //     const wb = XLSX.utils.book_new();
-  //     XLSX.utils.book_append_sheet(wb, ws, "ManagerTasks");
-  //     const timestamp = new Date().toISOString().split("T")[0];
-  //     XLSX.writeFile(wb, `ManagerTasks_${timestamp}.xlsx`);
-  //     toast.success("Export completed successfully");
-  //   } catch (error) {
-  //     console.error("Export error:", error);
-  //     toast.error("Failed to export data");
-  //   } finally {
-  //     setIsExporting(false);
-  //   }
-  // };
-  // 1. Sorting State
-  const [sortConfig, setSortConfig] = useState({ key: null, direction: "asc" });
-
-  // 2. Toggle Handler
-  const handleSort = (columnKey) => {
-    let direction = "asc";
-    if (sortConfig.key === columnKey && sortConfig.direction === "asc") {
-      direction = "desc";
-    }
-    setSortConfig({ key: columnKey, direction });
-  };
-
-  // 3. Dynamic Sort Icon
-  const getSortIcon = (columnKey) => {
-    if (sortConfig.key !== columnKey) {
-      return (
-        <ArrowUpDown className="h-3.5 w-3.5 text-gray-400 opacity-60 ml-1 inline" />
-      );
-    }
-    return sortConfig.direction === "asc" ? (
-      <ArrowUp className="h-3.5 w-3.5 text-blue-600 ml-1 inline" />
-    ) : (
-      <ArrowDown className="h-3.5 w-3.5 text-blue-600 ml-1 inline" />
-    );
-  };
-
-  // 4. Sorted Data Array (Status string aur Date timestamps dono handle karta hai)
-  const sortedTasks = useMemo(() => {
-    const list = [...(fetchedTasks || [])];
-
-    if (!sortConfig.key) return list;
-
-    return list.sort((a, b) => {
-      // Status sort
-      if (sortConfig.key === "status") {
-        const valA = (a.status || "").toLowerCase();
-        const valB = (b.status || "").toLowerCase();
-        return sortConfig.direction === "asc"
-          ? valA.localeCompare(valB)
-          : valB.localeCompare(valA);
-      }
-
-      // Dates sort (startDate, dueDate)
-      const valA = a[sortConfig.key]
-        ? new Date(a[sortConfig.key]).getTime()
-        : 0;
-      const valB = b[sortConfig.key]
-        ? new Date(b[sortConfig.key]).getTime()
-        : 0;
-
-      if (valA < valB) return sortConfig.direction === "asc" ? -1 : 1;
-      if (valA > valB) return sortConfig.direction === "asc" ? 1 : -1;
-      return 0;
-    });
-  }, [fetchedTasks, sortConfig]);
-  // --- Dynamic Table Headers ---
   // --- Dynamic Table Headers ---
   const CommonTableHeaders = () => (
-    <TableHeader>
+    <TableHeader className="bg-gray-50">
       <TableRow>
-        <TableHead>Sr. No.</TableHead>
-        <TableHead>Task Id</TableHead>
+        <TableHead className="w-[65px] min-w-[65px] whitespace-nowrap">
+          Sr. No.
+        </TableHead>
+        <TableHead className="w-[105px] min-w-[105px] whitespace-nowrap">
+          Task Id
+        </TableHead>
 
-        {/* 🟢 Clickable Status Header */}
+        {/* Clickable Status Header */}
         <TableHead
-          className="cursor-pointer select-none hover:bg-gray-100 transition-colors"
+          className="w-[125px] min-w-[125px] whitespace-nowrap cursor-pointer select-none hover:bg-gray-100 transition-colors"
           onClick={() => handleSort("status")}
         >
-          <div className="flex items-center">
+          <div className="flex items-center gap-1">
             <span>Status</span>
             {getSortIcon("status")}
           </div>
         </TableHead>
 
-        <TableHead>Actions</TableHead>
-        <TableHead>Task Title</TableHead>
-        <TableHead>Description</TableHead>
+        <TableHead className="w-[130px] min-w-[130px] whitespace-nowrap">
+          Actions
+        </TableHead>
+        <TableHead className="min-w-[220px] max-w-[270px]">
+          Task Title
+        </TableHead>
+        <TableHead className="min-w-[230px] max-w-[280px]">
+          Description
+        </TableHead>
 
         {engineViewTab === "fms" &&
           dynamicFmsHeaders.map((headerLabel) => (
             <TableHead
               key={headerLabel}
-              className="font-semibold text-blue-700 whitespace-nowrap"
+              className="min-w-[150px] font-semibold text-blue-700 whitespace-nowrap"
             >
               {headerLabel}
             </TableHead>
           ))}
 
-        <TableHead>Assigned By</TableHead>
-        <TableHead>Assigned To</TableHead>
-        <TableHead>Type</TableHead>
-        <TableHead>Attachment</TableHead>
+        <TableHead className="min-w-[155px] whitespace-nowrap">
+          Assigned By
+        </TableHead>
+        <TableHead className="min-w-[155px] whitespace-nowrap">
+          Assigned To
+        </TableHead>
+        <TableHead className="w-[135px] min-w-[135px] whitespace-nowrap">
+          Type
+        </TableHead>
+        <TableHead className="w-[110px] min-w-[110px] whitespace-nowrap">
+          Attachment
+        </TableHead>
 
-        {/* 🟢 Clickable Start Date Header */}
+        {/* Clickable Start Date Header */}
         <TableHead
-          className="cursor-pointer select-none hover:bg-gray-100 transition-colors"
+          className="min-w-[170px] whitespace-nowrap cursor-pointer select-none hover:bg-gray-100 transition-colors"
           onClick={() => handleSort("startDate")}
         >
-          <div className="flex items-center">
+          <div className="flex items-center gap-1">
             <span>Start Date & Time</span>
             {getSortIcon("startDate")}
           </div>
         </TableHead>
 
-        {/* 🟢 Clickable Due Date Header */}
+        {/* Clickable Due Date Header */}
         <TableHead
-          className="cursor-pointer select-none hover:bg-gray-100 transition-colors"
+          className="min-w-[170px] whitespace-nowrap cursor-pointer select-none hover:bg-gray-100 transition-colors"
           onClick={() => handleSort("dueDate")}
         >
-          <div className="flex items-center">
+          <div className="flex items-center gap-1">
             <span>Due Date & Time</span>
             {getSortIcon("dueDate")}
           </div>
         </TableHead>
 
-        <TableHead>Time left</TableHead>
+        {/* Clickable Completed At Header */}
+        <TableHead
+          className="min-w-[170px] whitespace-nowrap cursor-pointer select-none hover:bg-gray-100 transition-colors"
+          onClick={() => handleSort("completedAt")}
+        >
+          <div className="flex items-center gap-1">
+            <span>Completed At</span>
+            {getSortIcon("completedAt")}
+          </div>
+        </TableHead>
+
+        <TableHead className="min-w-[165px] whitespace-nowrap">
+          Time left
+        </TableHead>
       </TableRow>
     </TableHeader>
   );
@@ -1234,12 +1161,16 @@ const ManagerView = () => {
           ${task.isReopen ? "bg-yellow-50 border-l-4 border-yellow-500" : ""}
         `}
       >
-        <TableCell>
+        <TableCell className="whitespace-nowrap">
           {(localCurrentPage - 1) * localItemsPerPage + index + 1}
         </TableCell>
-        <TableCell>{task.TaskId || "-"}</TableCell>
-        <TableCell>{getStatusBadge(task.status)}</TableCell>
-        <TableCell>
+        <TableCell className="whitespace-nowrap font-medium">
+          {task.TaskId || "-"}
+        </TableCell>
+        <TableCell className="whitespace-nowrap">
+          {getStatusBadge(task.status)}
+        </TableCell>
+        <TableCell className="whitespace-nowrap">
           <TodayTaskActions
             activeTab={activeTab}
             task={task}
@@ -1253,18 +1184,18 @@ const ManagerView = () => {
             setReopenModalOpen={setReopenModalOpen}
           />
         </TableCell>
-        <TableCell className="font-medium">
+        <TableCell className="font-medium min-w-[220px] max-w-[270px]">
           <div className="flex flex-col gap-1">
             <div className="flex items-center gap-2 flex-wrap">
               <span
-                className="truncate max-w-[200px] inline-block"
+                className="truncate max-w-[230px] inline-block"
                 title={task.title}
               >
                 {task.title}
               </span>
 
               {task.isReopen && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-yellow-100 text-yellow-800 border border-yellow-300">
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-yellow-100 text-yellow-800 border border-yellow-300 whitespace-nowrap">
                   <RotateCcw className="h-3 w-3" />
                   Reopened
                 </span>
@@ -1323,21 +1254,27 @@ const ManagerView = () => {
             )}
 
             {task.isReopen && task.reopenedAt && (
-              <span className="text-[11px] text-gray-500">
+              <span className="text-[11px] text-gray-500 whitespace-nowrap">
                 Reopened on {formatDate(task.reopenedAt)}
               </span>
             )}
           </div>
         </TableCell>
-        <TableCell>
-          <Button
-            variant="link"
-            className="p-0 h-auto text-blue-600"
-            onClick={() => handleViewDescription(task.description)}
-            disabled={!task.description}
-          >
-            View
-          </Button>
+        <TableCell className="min-w-[230px] max-w-[280px]">
+          {task.description ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <p className="max-w-[250px] truncate text-sm text-gray-700 cursor-default">
+                  {task.description}
+                </p>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs break-words whitespace-pre-wrap">
+                <p>{task.description}</p>
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <span className="text-gray-400 text-sm">-</span>
+          )}
         </TableCell>
 
         {engineViewTab === "fms" &&
@@ -1359,65 +1296,30 @@ const ManagerView = () => {
             return (
               <TableCell
                 key={headerLabel}
-                className="font-medium text-gray-700 whitespace-nowrap"
+                className="min-w-[150px] font-medium text-gray-700 whitespace-nowrap"
               >
                 {String(displayVal)}
               </TableCell>
             );
           })}
 
-        <TableCell>
-          <div className="flex flex-row gap-1">
+        <TableCell className="min-w-[155px] whitespace-nowrap">
+          <div className="flex flex-row items-center gap-1">
             <span className="text-sm font-medium text-gray-900">
               {task.assignedBy?.name || "-"}
             </span>
-            {assignedByUser?.name && (
-              <span
-                className={`text-xs px-2 py-0.5 rounded-full w-fit font-medium ${
-                  assignedByUser.role?.name === "admin"
-                    ? "bg-red-100 text-red-700"
-                    : assignedByUser.role?.name === "owner"
-                      ? "bg-purple-100 text-purple-700"
-                      : // : assignedByUser.role?.name === "sr._manager"
-                        //   ? "bg-blue-100 text-blue-700"
-                        //   : assignedByUser.role?.name === "manager"
-                        //     ? "bg-green-100 text-green-700"
-                        "bg-gray-100 text-gray-700"
-                }`}
-              >
-                {assignedByUser.role?.name}
-              </span>
-            )}
           </div>
         </TableCell>
-        <TableCell>
-          <div className="flex flex-row gap-1">
+        <TableCell className="min-w-[155px] whitespace-nowrap">
+          <div className="flex flex-row items-center gap-1">
             <span className="text-sm font-medium text-gray-900">
               {task.assignedTo?.name || "-"}
             </span>
-
-            {assignedToUser?.name && (
-              <span
-                className={`text-xs px-2 py-0.5 rounded-full w-fit font-medium ${
-                  assignedToUser.role?.name === "admin"
-                    ? "bg-red-100 text-red-700"
-                    : assignedToUser.role?.name === "owner"
-                      ? "bg-purple-100 text-purple-700"
-                      : // : assignedToUser.role?.name === "sr._manager"
-                        //   ? "bg-blue-100 text-blue-700"
-                        //   : assignedToUser.role?.name === "manager"
-                        //     ? "bg-green-100 text-green-700"
-                        "bg-gray-100 text-gray-700"
-                }`}
-              >
-                {assignedToUser.role?.name}
-              </span>
-            )}
           </div>
         </TableCell>
-        <TableCell>
+        <TableCell className="whitespace-nowrap">
           <span
-            className={`px-2 py-1 text-xs font-medium rounded-full ${
+            className={`px-2 py-1 text-xs font-medium rounded-full inline-block whitespace-nowrap ${
               task.taskType === "FmsInstanceTask"
                 ? "bg-blue-100 text-blue-700"
                 : task.taskType === "RecurringTask"
@@ -1432,7 +1334,7 @@ const ManagerView = () => {
                 : "Delegation"}
           </span>
         </TableCell>
-        <TableCell>
+        <TableCell className="whitespace-nowrap">
           {Array.isArray(task?.attachmentFile) &&
           task.attachmentFile.length > 0 ? (
             <ViewLink file={task.attachmentFile} />
@@ -1440,16 +1342,27 @@ const ManagerView = () => {
             "NA"
           )}
         </TableCell>
-        <TableCell>
+        <TableCell className="min-w-[170px] whitespace-nowrap">
           {task.startDate ? formatDate(task.startDate) : "-"}
         </TableCell>
-        <TableCell>{task.dueDate ? formatDate(task.dueDate) : "-"}</TableCell>
-        <TableCell className="whitespace-nowrap">
+        <TableCell className="min-w-[170px] whitespace-nowrap">
+          {task.dueDate ? formatDate(task.dueDate) : "-"}
+        </TableCell>
+        <TableCell className="min-w-[170px] whitespace-nowrap">
+          {task.status === "Completed" &&
+          (task.completedAt || task.updatedAt) ? (
+            <span>{formatDate(task.completedAt || task.updatedAt)}</span>
+          ) : (
+            <span className="text-gray-400">-</span>
+          )}
+        </TableCell>
+        <TableCell className="min-w-[165px] whitespace-nowrap">
           {(() => {
             const dueStatus = getDueStatus(task.dueDate);
 
             if (!dueStatus) return "-";
-            if (task.status === "Completed") return;
+            if (task.status === "Completed")
+              return <span className="text-gray-400">-</span>;
 
             return (
               <div
@@ -1461,7 +1374,7 @@ const ManagerView = () => {
                       : "border-l-4 border-l-emerald-500"
                 }`}
               >
-                <div className="mr-3 relative flex h-3 w-3 items-center justify-center">
+                <div className="mr-3 relative flex h-3 w-3 items-center justify-center shrink-0">
                   {(dueStatus.type === "overdue" ||
                     dueStatus.type === "today" ||
                     dueStatus.type === "upcoming") && (
@@ -1489,7 +1402,7 @@ const ManagerView = () => {
 
                 <div>
                   <p
-                    className={`text-xs font-semibold ${
+                    className={`text-xs font-semibold whitespace-nowrap ${
                       dueStatus.type === "overdue"
                         ? "text-red-700"
                         : dueStatus.type === "today"
@@ -1504,7 +1417,7 @@ const ManagerView = () => {
                         : "Remaining"}
                   </p>
 
-                  <p className="text-[11px] text-muted-foreground">
+                  <p className="text-[11px] text-muted-foreground whitespace-nowrap">
                     {dueStatus.text}
                   </p>
                 </div>
@@ -1516,9 +1429,13 @@ const ManagerView = () => {
     );
   };
 
+  const isTableLoading = status === "loading";
+  const totalColumns =
+    14 + (engineViewTab === "fms" ? dynamicFmsHeaders.length : 0);
+
   const renderTableContent = () => (
     <div className="space-y-4">
-      {/* ⚡ SUB-TAB ENGINE FILTER BUTTONS */}
+      {/* SUB-TAB ENGINE FILTER BUTTONS */}
       <div className="flex items-center gap-2 border-b pb-3 pt-1">
         <Button
           variant={engineViewTab === "all" ? "default" : "outline"}
@@ -1557,20 +1474,41 @@ const ManagerView = () => {
         </Button>
       </div>
 
-      <div className="overflow-x-auto">
-        <Table>
+      <div className="w-full overflow-x-auto border rounded-lg bg-white">
+        <Table className="min-w-[1800px] w-full">
           <CommonTableHeaders />
           <TableBody>
-            {/* 🟢 Yahan sortedTasks use karein */}
-            {sortedTasks.length > 0 ? (
-              sortedTasks.map((task, index) => renderCommonRow(task, index))
+            {isTableLoading ? (
+              Array.from({ length: Math.min(localItemsPerPage, 2) }).map(
+                (_, rowIndex) => (
+                  <TableRow key={`skeleton-row-${rowIndex}`}>
+                    {Array.from({ length: totalColumns }).map(
+                      (__, colIndex) => (
+                        <TableCell
+                          key={`skeleton-cell-${rowIndex}-${colIndex}`}
+                          className="py-3"
+                        >
+                          <Skeleton.Input
+                            active
+                            size="small"
+                            style={{
+                              width:
+                                colIndex === 0 ? 32 : colIndex === 4 ? 160 : 90,
+                              height: 18,
+                            }}
+                          />
+                        </TableCell>
+                      ),
+                    )}
+                  </TableRow>
+                ),
+              )
+            ) : Array.isArray(fetchedTasks) && fetchedTasks.length > 0 ? (
+              fetchedTasks.map((task, index) => renderCommonRow(task, index))
             ) : (
               <TableRow>
                 <TableCell
-                  colSpan={
-                    13 +
-                    (engineViewTab === "fms" ? dynamicFmsHeaders.length : 0)
-                  }
+                  colSpan={totalColumns}
                   className="text-center py-8 text-gray-500"
                 >
                   No tasks found.
@@ -1611,14 +1549,13 @@ const ManagerView = () => {
               <TabsTrigger value="today">Today's Task</TabsTrigger>
               <TabsTrigger value="upcoming">Upcoming Tasks</TabsTrigger>
               <TabsTrigger value="completed">Completed Tasks</TabsTrigger>
-              {/* <TabsTrigger value="escalated">Escalated</TabsTrigger> */}
             </TabsList>
 
             <FilterBar
               searchTerm={searchTerm}
               setSearchTerm={setSearchTerm}
               selectedFilterStatus={selectedFilterStatus}
-              onFilterStatusChange={handleDropdownStatusChange} // 🟢 SYNCHRONIZED STATUS CHANGE
+              onFilterStatusChange={handleDropdownStatusChange}
               showExport={true}
               onExport={handleExport}
               isExporting={isExporting}
@@ -1641,39 +1578,26 @@ const ManagerView = () => {
               engineViewTab={engineViewTab}
             />
 
-            {status === "loading" && (
-              <div className="text-center py-10">
-                <RefreshCcw className="animate-spin h-6 w-6 text-blue-500 mx-auto" />
-              </div>
-            )}
-            {status !== "loading" && (
-              <>
-                <TabsContent value="today" className="">
-                  {renderTableContent()}
-                </TabsContent>
+            <TabsContent value="today" className="">
+              {renderTableContent()}
+            </TabsContent>
 
-                <TabsContent value="upcoming" className="">
-                  {renderTableContent()}
-                </TabsContent>
+            <TabsContent value="upcoming" className="">
+              {renderTableContent()}
+            </TabsContent>
 
-                <TabsContent value="completed" className="">
-                  {renderTableContent()}
-                </TabsContent>
+            <TabsContent value="completed" className="">
+              {renderTableContent()}
+            </TabsContent>
 
-                {/* <TabsContent value="escalated" className="">
-                  {renderTableContent()}
-                </TabsContent> */}
-
-                <Pagination
-                  totalItems={totalTasks || 0}
-                  itemsPerPage={localItemsPerPage}
-                  setItemsPerPage={setLocalItemsPerPage}
-                  currentPage={localCurrentPage}
-                  onPageChange={setLocalCurrentPage}
-                  isLoading={status === "loading"}
-                />
-              </>
-            )}
+            <Pagination
+              totalItems={totalTasks || 0}
+              itemsPerPage={localItemsPerPage}
+              setItemsPerPage={setLocalItemsPerPage}
+              currentPage={localCurrentPage}
+              onPageChange={setLocalCurrentPage}
+              isLoading={isTableLoading}
+            />
           </Tabs>
         </div>
       </div>

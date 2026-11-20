@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import api from "../lib/api";
 import { fetchTasks } from "../redux/slices/task/taskSlice";
@@ -32,35 +32,50 @@ const TaskPage = () => {
   const [departments, setDepartments] = useState([]);
   const [holidays, setHolidays] = useState([]);
   const [workingWeeks, setWorkingWeeks] = useState(null);
+  const [delegationTasks, setDelegationTasks] = useState([]);
 
   const dispatch = useDispatch();
-  const {
-    tasks,
-    totalTasks,
-    currentPage,
-    perPage,
-    status,
-  } = useSelector((state) => state.tasks);
+  const { tasks, totalTasks, currentPage, perPage, status } = useSelector(
+    (state) => state.tasks,
+  );
   const { currentUser } = useSelector((state) => state.users);
 
   const tasksLoading = status === "loading";
+
+  // Separate API call specifically for DelegationTask parent dropdown in CreateTaskForm
+  const loadDelegationTasks = useCallback(async () => {
+    try {
+      const queryParams = new URLSearchParams({
+        type: "DelegationTask",
+        page: 1,
+        limit: 100000000000000,
+      });
+      const res = await api.get(`/tasks?${queryParams.toString()}`);
+      setDelegationTasks(res?.data?.data || []);
+    } catch (err) {
+      console.error("Failed to load delegation tasks:", err);
+    }
+  }, []);
 
   useEffect(() => {
     let mounted = true;
     const loadData = async () => {
       try {
-        const [userRes, deptRes, holidayRes, workingWeekRes] = await Promise.all([
-          api.get("/setup/users/filter-allUsers"),
-          api.get("/setup/departments/allDepartments"),
-          api.get("/setup/holiday/allHolidays"),
-          api.get("/setup/working-week"),
-        ]);
+        const [userRes, deptRes, holidayRes, workingWeekRes] =
+          await Promise.all([
+            api.get("/setup/users/filter-allUsers"),
+            api.get("/setup/departments/allDepartments"),
+            api.get("/setup/holiday/allHolidays"),
+            api.get("/setup/working-week"),
+          ]);
 
         if (mounted) {
           setUsers(userRes?.data?.data || []);
           setDepartments(deptRes?.data?.data || []);
           setHolidays(holidayRes?.data?.data || []);
-          setWorkingWeeks(workingWeekRes?.data?.data?.workingWeek?.workingDays || null);
+          setWorkingWeeks(
+            workingWeekRes?.data?.data?.workingWeek?.workingDays || null,
+          );
         }
       } catch (err) {
         console.error("Failed to load initial data:", err);
@@ -68,14 +83,20 @@ const TaskPage = () => {
     };
 
     loadData();
+    loadDelegationTasks();
     dispatch(fetchUsers());
     return () => {
       mounted = false;
     };
-  }, [dispatch]);
+  }, [dispatch, loadDelegationTasks]);
 
   const handleRefreshTasks = (params = {}) => {
     dispatch(fetchTasks(params));
+  };
+
+  const handleTaskCreated = () => {
+    handleRefreshTasks();
+    loadDelegationTasks();
   };
 
   const handleViewDescription = (description) => {
@@ -90,8 +111,8 @@ const TaskPage = () => {
           users={users}
           departments={departments}
           holidays={holidays}
-          onTaskCreated={() => handleRefreshTasks()}
-          allTasks={tasks}
+          onTaskCreated={handleTaskCreated}
+          allTasks={delegationTasks}
           workingWeeks={workingWeeks}
         />
       )}
@@ -114,16 +135,24 @@ const TaskPage = () => {
         canDelete={canDelete}
       />
 
-      <Dialog open={isDescriptionDialogOpen} onOpenChange={setIsDescriptionDialogOpen}>
+      <Dialog
+        open={isDescriptionDialogOpen}
+        onOpenChange={setIsDescriptionDialogOpen}
+      >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Full Task Description</DialogTitle>
           </DialogHeader>
           <div className="py-4">
-            <p className="text-sm text-gray-700 whitespace-pre-wrap">{fullDescription}</p>
+            <p className="text-sm text-gray-700 whitespace-pre-wrap">
+              {fullDescription}
+            </p>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDescriptionDialogOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setIsDescriptionDialogOpen(false)}
+            >
               Close
             </Button>
           </DialogFooter>

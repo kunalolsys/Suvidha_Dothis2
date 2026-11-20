@@ -42,23 +42,22 @@ export const getAllUsers = handleAsync(async (req, res, next) => {
     department,
     assignShift,
     search,
+    sortBy = "name", // default: "name" (ya "createdAt" rakh sakte hain)
+    sortOrder = "asc", // "asc" | "desc"
   } = req.body;
 
   const filter = { isDeleted: { $ne: true } };
 
-  // ✅ Active filter
   if (active === true || active === "true") {
     filter.isActive = true;
   }
 
-  // ✅ Manager + subordinates filter
   if (managerId) {
     const subordinateIds = await getAllSubordinates(managerId);
     subordinateIds.push(managerId);
     filter._id = { $in: subordinateIds };
   }
 
-  // ✅ SEARCH FILTER
   if (search) {
     filter.$or = [
       { name: { $regex: search, $options: "i" } },
@@ -67,44 +66,43 @@ export const getAllUsers = handleAsync(async (req, res, next) => {
     ];
   }
 
-  // 🟢 ROLE FILTER FIX
   const superRole = await Role.findOne({ name: "Super" }).select("_id");
-
   if (role) {
     filter.role = role;
   } else if (superRole) {
     filter.role = { $ne: superRole._id };
   }
 
-  // ✅ Department filter
   if (department) {
-    if (Array.isArray(department)) {
-      filter.department = { $in: department };
-    } else {
-      filter.department = department;
-    }
+    filter.department = Array.isArray(department)
+      ? { $in: department }
+      : department;
   }
 
-  // ✅ Assign Shift filter
   if (assignShift) {
     filter.assignShift = assignShift;
   }
 
   const total = await User.countDocuments(filter);
 
-  // 🟢 SEARCH PAGE BUG FIX: Agar calculated skip total results se zyada ho to page = 1 kar do
   let currentSkip = (Number(page) - 1) * Number(limit);
   if (currentSkip >= total && total > 0) {
     page = 1;
     currentSkip = 0;
   }
 
+  // ✅ Allowed sort fields & direction
+  const allowedSortFields = ["name", "email", "employeeCode", "createdAt"];
+  const sortField = allowedSortFields.includes(sortBy) ? sortBy : "name";
+  const sortDirection = String(sortOrder).toLowerCase() === "desc" ? -1 : 1;
+
   const users = await User.find(filter, "-password")
+    .collation({ locale: "en", strength: 2 }) // Case-insensitive A-Z / Z-A sorting
     .populate("department", "name")
     .populate("reportingManager", "name")
     .populate("role", "name displayName")
     .populate("assignShift")
-    .sort({ createdAt: -1 })
+    .sort({ [sortField]: sortDirection })
     .skip(currentSkip)
     .limit(Number(limit))
     .lean();
@@ -216,19 +214,25 @@ export const exportUsers = handleAsync(async (req, res) => {
 
 export const getAllUserForDrops = handleAsync(async (req, res) => {
   const filter = { isDeleted: { $ne: true } };
-  // 🔥 NO PAGINATION HERE
+
   const superRole = await Role.findOne({
-    name: "Super",
+    name: { $regex: /^super$/i },
   }).select("_id");
 
   if (superRole) {
     filter.role = { $ne: superRole._id };
   }
+
   const users = await User.find(filter)
-    .select("department role assignShift name _id")
+    .select(
+      "department role assignShift name employeeCode customPermissions _id",
+    )
     .populate("department", "name")
     .populate("role", "name displayName")
-    .populate("assignShift");
+    .populate("assignShift")
+    .collation({ locale: "en", strength: 2 }) // Case-insensitive A-Z sorting
+    .sort({ name: 1 })
+    .lean();
 
   return res.status(200).json({
     success: true,
@@ -952,7 +956,9 @@ export const updateUsersCSV = handleAsync(async (req, res, next) => {
     });
   } catch (parseErr) {
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-    return next(new AppError("CSV file format parse karne mein error aaya.", 400));
+    return next(
+      new AppError("CSV file format parse karne mein error aaya.", 400),
+    );
   }
 
   if (fs.existsSync(filePath)) {
@@ -1018,7 +1024,11 @@ export const updateUsersCSV = handleAsync(async (req, res, next) => {
       row["Telegram Chat Id"] ||
       row["Telegram Chat ID"];
 
-    if (rawChatId === undefined || rawChatId === null || String(rawChatId).trim() === "") {
+    if (
+      rawChatId === undefined ||
+      rawChatId === null ||
+      String(rawChatId).trim() === ""
+    ) {
       skippedRows.push({
         ...row,
         "Skip Reason": "Is row mein chat_id khali hai.",
@@ -1028,7 +1038,11 @@ export const updateUsersCSV = handleAsync(async (req, res, next) => {
 
     // Floating-point ya scientific format se clean integer string banayein
     let cleanChatId = String(rawChatId).trim();
-    if (cleanChatId.includes("e") || cleanChatId.includes("E") || cleanChatId.includes(".")) {
+    if (
+      cleanChatId.includes("e") ||
+      cleanChatId.includes("E") ||
+      cleanChatId.includes(".")
+    ) {
       const parsedNum = Number(cleanChatId);
       if (!isNaN(parsedNum)) {
         cleanChatId = BigInt(Math.trunc(parsedNum)).toString();
@@ -1067,7 +1081,8 @@ export const updateUsersCSV = handleAsync(async (req, res, next) => {
     } catch (saveErr) {
       errorRows.push({
         ...row,
-        "Error Reason": saveErr.message || "Record update karne mein error aaya.",
+        "Error Reason":
+          saveErr.message || "Record update karne mein error aaya.",
       });
     }
   }
@@ -1085,3 +1100,66 @@ export const updateUsersCSV = handleAsync(async (req, res, next) => {
     message: `Update complete: ${updatedUsers.length} user(s) update hue, ${skippedRows.length} skip hue, ${errorRows.length} fail hue.`,
   });
 });
+export const checkEmployeeStatus = async (req, res) => {
+  try {
+    const rawCode =
+      req.query.emp_code ||
+      req.query.employeeCode ||
+      req.body?.emp_code ||
+      req.body?.employeeCode;
+
+    // 🟢 If employeeCode is not provided, return all active users
+    if (!rawCode || !String(rawCode).trim()) {
+      const activeUsers = await User.find({
+        isActive: true,
+        isDeleted: { $ne: true },
+      })
+        .select("name email employeeCode companyCode isActive")
+        .sort({ name: 1 })
+        .lean();
+
+      return res.status(200).json({
+        success: true,
+        total: activeUsers.length,
+        users: activeUsers,
+      });
+    }
+
+    const cleanCode = String(rawCode).trim();
+    const escapedCode = cleanCode.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+    const user = await User.findOne({
+      employeeCode: { $regex: `^${escapedCode}$`, $options: "i" },
+      isDeleted: { $ne: true },
+    })
+      .select("name email employeeCode companyCode isActive")
+      .lean();
+
+    if (!user) {
+      return res.status(200).json({
+        success: false,
+        exists: false,
+        isActive: false,
+        message: "User does not exist.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      exists: true,
+      isActive: Boolean(user.isActive),
+      message: user.isActive ? "User is active." : "User is inactive.",
+      users: {
+        name: user.name,
+        email: user.email,
+        employeeCode: user.employeeCode,
+        companyCode: user.companyCode,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};

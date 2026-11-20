@@ -109,20 +109,11 @@ const AdminDashboard = () => {
 
   const dynamicStats = useMemo(() => {
     const counts = allTaskForDashboard?.counts || {};
-    const tasks = allTaskForDashboard?.data || [];
     const totalTasks = allTaskForDashboard?.total || 0;
     const completedTasks = counts.Completed || 0;
     const pendingTasks = counts.Pending || 0;
     const overdueTasks = counts.Overdue || 0;
-    const todaysTasks = tasks.filter((t) => {
-      const today = new Date();
-      const taskDate = new Date(t.startDate);
-      return (
-        taskDate.getDate() === today.getDate() &&
-        taskDate.getMonth() === today.getMonth() &&
-        taskDate.getFullYear() === today.getFullYear()
-      );
-    }).length;
+    const todaysTasks = allTaskForDashboard?.todayCount || 0;
 
     return {
       totalTasks,
@@ -131,7 +122,7 @@ const AdminDashboard = () => {
       todaysTasks,
       overdueTasks,
     };
-  }, [allTaskForDashboard, users]);
+  }, [allTaskForDashboard]);
 
   const topFmsItems = [
     { name: "Social Media FMS", performance: 98.2 },

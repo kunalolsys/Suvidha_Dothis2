@@ -26,6 +26,17 @@ export const createFmsTasks = handleAsync(async (req, res, next) => {
       const description = row.description?.trim();
       if (!description) throw new Error("taskDescription required");
 
+      // 🟢 1. Pehle Doer (assignedTo) user ko fetch karein
+      const doer = await User.findById(row.assignedTo).populate(
+        "role assignShift",
+      );
+      if (!doer || !doer.assignShift) {
+        throw new Error("Doer must be Member with shift");
+      }
+
+      // 🟢 2. Backend se user ka department nikalein (link nahi hai to null)
+      const resolvedDeptId = doer.department?._id || doer.department || null;
+
       const isDecisionStep =
         row.decisionStep === true ||
         row.decisionStep === "yes" ||
@@ -38,16 +49,16 @@ export const createFmsTasks = handleAsync(async (req, res, next) => {
         row.linkedWithForm === "true";
 
       const taskData = {
-        fmsTemplateId: row.fmsTemplateId,
+        fmsTemplateId: row.fmsTemplateId || templateId,
         description,
         taskId: row.taskId,
-        departmentOfAssignToUser: row.departmentOfAssignToUser,
-        assignedTo: row.assignedTo,
+        departmentOfAssignToUser: resolvedDeptId, // 🟢 Backend se resolved department (or null)
+        assignedTo: doer._id,
         frequency:
           !row.frequency || row.frequency.toLowerCase() === "none"
             ? "None"
             : row.frequency,
-        linkedWithForm, // 🟢 LINKED WITH FORM HANDLED
+        linkedWithForm,
         xValue: parseFloat(row.xValue || 0),
         isDependent: row.isDependent || false,
         dependentOn: row.dependentOn || null,
@@ -69,16 +80,6 @@ export const createFmsTasks = handleAsync(async (req, res, next) => {
         checklist: row.checklist || [],
         createdForm: row.createdForm || [],
       };
-
-      const dept = await Department.findById(taskData.departmentOfAssignToUser);
-      if (!dept) throw new Error("Invalid department");
-
-      const doer = await User.findById(taskData.assignedTo).populate(
-        "role assignShift",
-      );
-      if (!doer || !doer.assignShift) {
-        throw new Error("Doer must be Member with shift");
-      }
 
       const task = new FmsTask(taskData);
       await task.save();

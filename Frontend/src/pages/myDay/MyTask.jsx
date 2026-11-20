@@ -94,6 +94,7 @@ import {
   Modal as AntdModal,
   Descriptions,
   Modal,
+  Skeleton,
 } from "antd";
 const { RangePicker } = DatePicker;
 import * as Yup from "yup";
@@ -210,7 +211,7 @@ const TaskActions = ({
   const isFms = task.taskType == "FmsInstanceTask";
 
   return (
-    <div className="flex gap-1">
+    <div className="grid grid-cols-3 gap-1">
       {/* Checklist Button */}
       <Tooltip>
         <TooltipTrigger asChild>
@@ -356,8 +357,10 @@ const TaskActions = ({
     </div>
   );
 };
+
 const getFieldKey = (fieldName) =>
   fieldName.replace(/[.[\]]/g, "_").replace(/\s+/g, "_");
+
 const buildValidationSchema = (fields) => {
   const shape = {};
 
@@ -397,7 +400,7 @@ const buildValidationSchema = (fields) => {
   return Yup.object().shape(shape);
 };
 
-/* ------------------ ✅ Component ------------------ */
+/* ------------------ Component ------------------ */
 const FmsFormModal = ({
   open,
   onClose,
@@ -568,6 +571,7 @@ const FmsFormModal = ({
     </div>
   );
 };
+
 // --- Helper: Pagination ---
 const Pagination = ({
   totalItems,
@@ -727,7 +731,7 @@ const FilterBar = ({
   selectedFilterTaskType,
   setSelectedFilterTaskType,
   selectedFilterStatus,
-  onFilterStatusChange, // 🟢 SYNCHRONIZED STATUS DROPDOWN CHANGE
+  onFilterStatusChange,
   showExport = false,
   onExport,
   isExporting,
@@ -778,10 +782,7 @@ const FilterBar = ({
           </SelectContent>
         </Select>
       )}
-      <Select
-        value={selectedFilterStatus}
-        onValueChange={onFilterStatusChange} // 🟢 SYNCHRONIZED DROPDOWN CHANGE
-      >
+      <Select value={selectedFilterStatus} onValueChange={onFilterStatusChange}>
         <SelectTrigger className="w-full bg-white">
           <SelectValue placeholder="All Statuses" />
         </SelectTrigger>
@@ -834,24 +835,16 @@ const TodayTasksTable = ({
   setSubmissionModalOpen,
   setSelectedSubmissionTask,
   canUpdate,
+  sortConfig,
+  onSort,
+  isLoading,
 }) => {
   const combinedTasks = [...(tasks || []), ...(upcomingRecurringTasks || [])];
-
-  // 1. Sorting State
-  const [sortConfig, setSortConfig] = useState({ key: null, direction: "asc" });
-
-  // 2. Click Handler (Toggle Ascending / Descending)
-  const handleSort = (columnKey) => {
-    let direction = "asc";
-    if (sortConfig.key === columnKey && sortConfig.direction === "asc") {
-      direction = "desc";
-    }
-    setSortConfig({ key: columnKey, direction });
-  };
+  const totalColumns = 15;
 
   // Helper for Sort Icons
   const getSortIcon = (columnKey) => {
-    if (sortConfig.key !== columnKey) {
+    if (sortConfig?.key !== columnKey) {
       return (
         <ArrowUpDown className="h-3.5 w-3.5 text-gray-400 opacity-60 ml-1" />
       );
@@ -863,92 +856,128 @@ const TodayTasksTable = ({
     );
   };
 
-  // 3. Frontend Sorting (Date + Status String Support)
-  const sortedTasks = useMemo(() => {
-    if (!sortConfig.key) return combinedTasks;
-
-    return [...combinedTasks].sort((a, b) => {
-      // 🟢 Agar status column par sort ho raha ho
-      if (sortConfig.key === "status") {
-        const valA = (a.status || "").toLowerCase();
-        const valB = (b.status || "").toLowerCase();
-
-        return sortConfig.direction === "asc"
-          ? valA.localeCompare(valB)
-          : valB.localeCompare(valA);
-      }
-
-      // 🟢 Date columns (startDate, dueDate) ke liye
-      const valA = a[sortConfig.key]
-        ? new Date(a[sortConfig.key]).getTime()
-        : 0;
-      const valB = b[sortConfig.key]
-        ? new Date(b[sortConfig.key]).getTime()
-        : 0;
-
-      if (valA < valB) return sortConfig.direction === "asc" ? -1 : 1;
-      if (valA > valB) return sortConfig.direction === "asc" ? 1 : -1;
-      return 0;
-    });
-  }, [combinedTasks, sortConfig]);
-
   return (
-    <div className="overflow-x-auto border rounded-lg bg-white">
-      <Table>
+    <div className="w-full overflow-x-auto border rounded-lg bg-white">
+      <Table className="min-w-[1850px] w-full">
         <TableHeader className="bg-gray-50">
           <TableRow>
-            <TableHead>Sr. No.</TableHead>
-            <TableHead>Task Id</TableHead>
+            <TableHead className="w-[65px] min-w-[65px] whitespace-nowrap">
+              Sr. No.
+            </TableHead>
+            <TableHead className="w-[105px] min-w-[105px] whitespace-nowrap">
+              Task Id
+            </TableHead>
 
-            {/* 🟢 Clickable Status Header with Sort */}
+            {/* Clickable Status Header with Server-Side Sort */}
             <TableHead
-              className="cursor-pointer select-none hover:bg-gray-100 transition-colors"
-              onClick={() => handleSort("status")}
+              className="w-[125px] min-w-[125px] whitespace-nowrap cursor-pointer select-none hover:bg-gray-100 transition-colors"
+              onClick={() => onSort("status")}
             >
-              <div className="flex items-center">
+              <div className="flex items-center gap-1">
                 <span>Status</span>
                 {getSortIcon("status")}
               </div>
             </TableHead>
 
-            {canUpdate && <TableHead>Actions</TableHead>}
-            <TableHead>Task Title</TableHead>
-            <TableHead>Assigned By</TableHead>
-            <TableHead>Assigned To</TableHead>
-            <TableHead>Description</TableHead>
-            <TableHead>Type</TableHead>
-            <TableHead>Attachment</TableHead>
+            {canUpdate && (
+              <TableHead className="w-[130px] min-w-[130px] whitespace-nowrap">
+                Actions
+              </TableHead>
+            )}
 
-            {/* Clickable Start Date */}
+            <TableHead className="min-w-[220px] max-w-[270px]">
+              Task Title
+            </TableHead>
+
+            <TableHead className="min-w-[155px] whitespace-nowrap">
+              Assigned By
+            </TableHead>
+
+            <TableHead className="min-w-[155px] whitespace-nowrap">
+              Assigned To
+            </TableHead>
+
+            <TableHead className="min-w-[230px] max-w-[280px]">
+              Description
+            </TableHead>
+
+            <TableHead className="w-[135px] min-w-[135px] whitespace-nowrap">
+              Type
+            </TableHead>
+
+            <TableHead className="w-[110px] min-w-[110px] whitespace-nowrap">
+              Attachment
+            </TableHead>
+
+            {/* Clickable Start Date with Server-Side Sort */}
             <TableHead
-              className="cursor-pointer select-none hover:bg-gray-100 transition-colors"
-              onClick={() => handleSort("startDate")}
+              className="min-w-[170px] whitespace-nowrap cursor-pointer select-none hover:bg-gray-100 transition-colors"
+              onClick={() => onSort("startDate")}
             >
-              <div className="flex items-center">
+              <div className="flex items-center gap-1">
                 <span>Start Date & Time</span>
                 {getSortIcon("startDate")}
               </div>
             </TableHead>
 
-            {/* Clickable Due Date */}
+            {/* Clickable Due Date with Server-Side Sort */}
             <TableHead
-              className="cursor-pointer select-none hover:bg-gray-100 transition-colors"
-              onClick={() => handleSort("dueDate")}
+              className="min-w-[170px] whitespace-nowrap cursor-pointer select-none hover:bg-gray-100 transition-colors"
+              onClick={() => onSort("dueDate")}
             >
-              <div className="flex items-center">
+              <div className="flex items-center gap-1">
                 <span>Due Date & Time</span>
                 {getSortIcon("dueDate")}
               </div>
             </TableHead>
 
-            <TableHead>Frequency</TableHead>
-            <TableHead>Time Left</TableHead>
+            {/* Clickable Completed At with Server-Side Sort */}
+            <TableHead
+              className="min-w-[170px] whitespace-nowrap cursor-pointer select-none hover:bg-gray-100 transition-colors"
+              onClick={() => onSort("completedAt")}
+            >
+              <div className="flex items-center gap-1">
+                <span>Completed At</span>
+                {getSortIcon("completedAt")}
+              </div>
+            </TableHead>
+
+            <TableHead className="w-[115px] min-w-[115px] whitespace-nowrap">
+              Frequency
+            </TableHead>
+
+            <TableHead className="min-w-[165px] whitespace-nowrap">
+              Time Left
+            </TableHead>
           </TableRow>
         </TableHeader>
 
         <TableBody>
-          {sortedTasks.length > 0 ? (
-            sortedTasks.map((task, index) => {
+          {isLoading ? (
+            Array.from({ length: Math.min(itemsPerPage, 2) }).map(
+              (_, rowIndex) => (
+                <TableRow key={`skeleton-row-${rowIndex}`}>
+                  {Array.from({ length: totalColumns }).map((__, colIndex) => (
+                    <TableCell
+                      key={`skeleton-cell-${rowIndex}-${colIndex}`}
+                      className="py-3"
+                    >
+                      <Skeleton.Input
+                        active
+                        size="small"
+                        style={{
+                          width:
+                            colIndex === 0 ? 32 : colIndex === 4 ? 160 : 90,
+                          height: 18,
+                        }}
+                      />
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ),
+            )
+          ) : combinedTasks.length > 0 ? (
+            combinedTasks.map((task, index) => {
               const assignedByUser = allUsers.find(
                 (u) => String(u._id) === String(task.assignedBy?._id),
               );
@@ -961,18 +990,24 @@ const TodayTasksTable = ({
                 <React.Fragment key={task._id}>
                   <TableRow
                     className={`
-                    ${task.isOverdue ? "bg-red-50" : ""}
-                    ${task.isReopen ? "bg-yellow-50 border-l-4 border-yellow-500" : ""}
-                  `}
+                ${task.isOverdue ? "bg-red-50" : ""}
+                ${task.isReopen ? "bg-yellow-50 border-l-4 border-yellow-500" : ""}
+              `}
                   >
-                    <TableCell>
+                    <TableCell className="whitespace-nowrap">
                       {(currentPage - 1) * itemsPerPage + index + 1}
                     </TableCell>
-                    <TableCell>{task.TaskId || "-"}</TableCell>
 
-                    <TableCell>{getStatusBadge(task.status)}</TableCell>
+                    <TableCell className="whitespace-nowrap font-medium">
+                      {task.TaskId || "-"}
+                    </TableCell>
+
+                    <TableCell className="whitespace-nowrap">
+                      {getStatusBadge(task.status)}
+                    </TableCell>
+
                     {canUpdate && (
-                      <TableCell>
+                      <TableCell className="whitespace-nowrap">
                         <div className="flex items-center">
                           <TaskActions
                             task={task}
@@ -994,12 +1029,13 @@ const TodayTasksTable = ({
                         </div>
                       </TableCell>
                     )}
-                    <TableCell className="font-medium">
+
+                    <TableCell className="font-medium min-w-[220px] max-w-[270px]">
                       <div className="flex flex-col gap-1">
                         {/* TITLE + BADGE */}
                         <div className="flex items-center gap-2 flex-wrap">
                           <span
-                            className="truncate max-w-[200px] inline-block"
+                            className="truncate max-w-[230px] inline-block"
                             title={task.title}
                           >
                             {task.title}
@@ -1007,15 +1043,16 @@ const TodayTasksTable = ({
                           {task.isReopen && (
                             <span
                               className="
-            inline-flex items-center gap-1
-            px-2 py-0.5
-            rounded-full
-            text-[10px]
-            font-semibold
-            bg-yellow-100
-            text-yellow-800
-            border border-yellow-300
-          "
+                            inline-flex items-center gap-1
+                            px-2 py-0.5
+                            rounded-full
+                            text-[10px]
+                            font-semibold
+                            bg-yellow-100
+                            text-yellow-800
+                            border border-yellow-300
+                            whitespace-nowrap
+                          "
                             >
                               <RotateCcw className="h-3 w-3" />
                               Reopened
@@ -1056,15 +1093,15 @@ const TodayTasksTable = ({
 
                                     <div
                                       className="
-                    text-sm
-                    bg-gray-50
-                    border
-                    rounded-lg
-                    p-3
-                    whitespace-pre-wrap
-                    break-words
-                    text-gray-700
-                  "
+                                    text-sm
+                                    bg-gray-50
+                                    border
+                                    rounded-lg
+                                    p-3
+                                    whitespace-pre-wrap
+                                    break-words
+                                    text-gray-700
+                                  "
                                     >
                                       {task.reopenedReason}
                                     </div>
@@ -1083,12 +1120,12 @@ const TodayTasksTable = ({
                             >
                               <button
                                 className="
-              text-[11px]
-              text-blue-600
-              cursor-pointer
-              hover:text-blue-800
-              hover:underline
-            "
+                              text-[11px]
+                              text-blue-600
+                              cursor-pointer
+                              hover:text-blue-800
+                              hover:underline
+                            "
                               >
                                 View Reason
                               </button>
@@ -1097,71 +1134,49 @@ const TodayTasksTable = ({
                         )}
 
                         {task.isReopen && task.reopenedAt && (
-                          <span className="text-[11px] text-gray-500">
+                          <span className="text-[11px] text-gray-500 whitespace-nowrap">
                             Reopened on {formatDate(task.reopenedAt)}
                           </span>
                         )}
                       </div>
                     </TableCell>
-                    <TableCell>
-                      <div className="flex flex-row gap-1">
+
+                    <TableCell className="min-w-[155px] whitespace-nowrap">
+                      <div className="flex flex-row items-center gap-1">
                         <span className="text-sm font-medium text-gray-900">
                           {task.assignedBy?.name || "-"}
                         </span>
-                        {assignedByUser?.name && (
-                          <span
-                            className={`text-xs px-2 py-0.5 rounded-full w-fit font-medium
-      ${
-        assignedByUser.role?.name === "admin"
-          ? "bg-red-100 text-red-700"
-          : assignedByUser.role?.name === "owner"
-            ? "bg-purple-100 text-purple-700"
-            : "bg-gray-100 text-gray-700"
-      }
-    `}
-                          >
-                            {assignedByUser.role?.name}
-                          </span>
-                        )}
                       </div>
                     </TableCell>
-                    <TableCell>
-                      <div className="flex flex-row gap-1">
+
+                    <TableCell className="min-w-[155px] whitespace-nowrap">
+                      <div className="flex flex-row items-center gap-1">
                         <span className="text-sm font-medium text-gray-900">
                           {task.assignedTo?.name || "-"}
                         </span>
-
-                        {assignedToUser?.name && (
-                          <span
-                            className={`text-xs px-2 py-0.5 rounded-full w-fit font-medium
-      ${
-        assignedToUser.role?.name === "admin"
-          ? "bg-red-100 text-red-700"
-          : assignedToUser.role?.name === "owner"
-            ? "bg-purple-100 text-purple-700"
-            : "bg-gray-100 text-gray-700"
-      }
-    `}
-                          >
-                            {assignedToUser.role?.name}
-                          </span>
-                        )}
                       </div>
                     </TableCell>
 
-                    <TableCell>
-                      <Button
-                        variant="link"
-                        className="p-0 h-auto text-blue-600"
-                        onClick={() => onViewDescription(task)}
-                        disabled={!task.description}
-                      >
-                        View
-                      </Button>
+                    <TableCell className="min-w-[230px] max-w-[280px]">
+                      {task.description ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <p className="max-w-[250px] truncate text-sm text-gray-700 cursor-default">
+                              {task.description}
+                            </p>
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-xs break-words whitespace-pre-wrap">
+                            <p>{task.description}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      ) : (
+                        <span className="text-gray-400 text-sm">-</span>
+                      )}
                     </TableCell>
-                    <TableCell>
+
+                    <TableCell className="whitespace-nowrap">
                       <span
-                        className={`px-2 py-1 text-xs font-medium rounded-full ${
+                        className={`px-2 py-1 text-xs font-medium rounded-full inline-block whitespace-nowrap ${
                           task.taskType === "FmsInstanceTask"
                             ? "bg-blue-100 text-blue-700"
                             : task.taskType === "RecurringTask"
@@ -1184,7 +1199,8 @@ const TodayTasksTable = ({
                                 : "Delegation"}
                       </span>
                     </TableCell>
-                    <TableCell>
+
+                    <TableCell className="whitespace-nowrap">
                       {Array.isArray(task?.attachmentFile) &&
                       task.attachmentFile.length > 0 ? (
                         <ViewLink file={task.attachmentFile} />
@@ -1192,14 +1208,31 @@ const TodayTasksTable = ({
                         "NA"
                       )}
                     </TableCell>
-                    <TableCell>
+
+                    <TableCell className="min-w-[170px] whitespace-nowrap">
                       {task.startDate ? formatDate(task.startDate) : "-"}
                     </TableCell>
-                    <TableCell>
+
+                    <TableCell className="min-w-[170px] whitespace-nowrap">
                       {task.dueDate ? formatDate(task.dueDate) : "-"}
                     </TableCell>
-                    <TableCell>{task.frequency ?? "-"}</TableCell>
+
+                    <TableCell className="min-w-[170px] whitespace-nowrap">
+                      {task.status === "Completed" &&
+                      (task.completedAt || task.updatedAt) ? (
+                        <span>
+                          {formatDate(task.completedAt || task.updatedAt)}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400">-</span>
+                      )}
+                    </TableCell>
+
                     <TableCell className="whitespace-nowrap">
+                      {task.frequency ?? "-"}
+                    </TableCell>
+
+                    <TableCell className="min-w-[165px] whitespace-nowrap">
                       {(() => {
                         if (
                           ["Completed", "Stopped", "Not Done"].includes(
@@ -1230,55 +1263,55 @@ const TodayTasksTable = ({
                         return (
                           <div
                             className={`relative inline-flex items-center overflow-hidden rounded-lg border bg-white px-3 py-2 shadow-sm
-          transition-all duration-300 hover:-translate-y-1 hover:shadow-lg
-          ${
-            isOverdue
-              ? "border-l-4 border-l-red-500 bg-red-50/20"
-              : isToday
-                ? "border-l-4 border-l-amber-500 bg-amber-50/20"
-                : "border-l-4 border-l-emerald-500"
-          }`}
+                          transition-all duration-300 hover:-translate-y-1 hover:shadow-lg
+                          ${
+                            isOverdue
+                              ? "border-l-4 border-l-red-500 bg-red-50/20"
+                              : isToday
+                                ? "border-l-4 border-l-amber-500 bg-amber-50/20"
+                                : "border-l-4 border-l-emerald-500"
+                          }`}
                           >
                             {/* Animated Status Dot */}
-                            <div className="mr-3 relative flex h-3 w-3 items-center justify-center">
+                            <div className="mr-3 relative flex h-3 w-3 items-center justify-center shrink-0">
                               <span
                                 className={`absolute inline-flex h-full w-full rounded-full opacity-75
-              ${
-                isOverdue
-                  ? "bg-red-500 animate-ping"
-                  : isToday
-                    ? "bg-amber-500 animate-ping"
-                    : "bg-emerald-500 animate-ping"
-              }`}
+                              ${
+                                isOverdue
+                                  ? "bg-red-500 animate-ping"
+                                  : isToday
+                                    ? "bg-amber-500 animate-ping"
+                                    : "bg-emerald-500 animate-ping"
+                              }`}
                               />
                               <span
                                 className={`relative inline-flex h-3 w-3 rounded-full
-              ${
-                isOverdue
-                  ? "bg-red-500"
-                  : isToday
-                    ? "bg-amber-500"
-                    : "bg-emerald-500"
-              }`}
+                              ${
+                                isOverdue
+                                  ? "bg-red-500"
+                                  : isToday
+                                    ? "bg-amber-500"
+                                    : "bg-emerald-500"
+                              }`}
                               />
                             </div>
 
                             {/* Content */}
                             <div>
                               <p
-                                className={`text-xs font-semibold
-              ${
-                isOverdue
-                  ? "text-red-700"
-                  : isToday
-                    ? "text-amber-700"
-                    : "text-emerald-700"
-              }`}
+                                className={`text-xs font-semibold whitespace-nowrap
+                              ${
+                                isOverdue
+                                  ? "text-red-700"
+                                  : isToday
+                                    ? "text-amber-700"
+                                    : "text-emerald-700"
+                              }`}
                               >
                                 {dueStatus.label}
                               </p>
 
-                              <p className="text-[11px] text-muted-foreground">
+                              <p className="text-[11px] text-muted-foreground whitespace-nowrap">
                                 {dueStatus.text}
                               </p>
                             </div>
@@ -1293,7 +1326,7 @@ const TodayTasksTable = ({
           ) : (
             <TableRow>
               <TableCell
-                colSpan={14}
+                colSpan={totalColumns}
                 className="text-center py-8 text-gray-500"
               >
                 No tasks found for this filter
@@ -1401,7 +1434,19 @@ const MyTask = () => {
   const [selectedFilterTaskType, setSelectedFilterTaskType] = useState("all");
   const [selectedFilterStatus, setSelectedFilterStatus] = useState("all");
 
-  // 🟢 BIDIRECTIONAL SYNCHRONIZATION: DROPDOWN SELECT -> STATS CARD HIGHLIGHT
+  // Server-side Sorting State
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: "asc" });
+
+  const handleSort = (columnKey) => {
+    let direction = "asc";
+    if (sortConfig.key === columnKey && sortConfig.direction === "asc") {
+      direction = "desc";
+    }
+    setSortConfig({ key: columnKey, direction });
+    setLocalCurrentPage(1);
+  };
+
+  // BIDIRECTIONAL SYNCHRONIZATION: DROPDOWN SELECT -> STATS CARD HIGHLIGHT
   const handleDropdownStatusChange = (val) => {
     setSelectedFilterStatus(val);
     setLocalCurrentPage(1);
@@ -1507,6 +1552,10 @@ const MyTask = () => {
           limit: localItemsPerPage,
           dateRange,
           search: debouncedSearch || undefined,
+          ...(sortConfig.key && {
+            sortBy: sortConfig.key,
+            sortOrder: sortConfig.direction,
+          }),
 
           filters: {
             stat: selectedStatFilter || null,
@@ -1547,6 +1596,7 @@ const MyTask = () => {
     dateRange,
     refetch,
     refreshUI,
+    sortConfig,
   ]);
 
   const handleExport = async () => {
@@ -1604,13 +1654,16 @@ const MyTask = () => {
         "Due Date": task?.dueDate
           ? new Date(task.dueDate).toLocaleDateString()
           : "-",
+        "Completed At": task?.completedAt
+          ? new Date(task.completedAt).toLocaleDateString()
+          : "-",
         Delay: task?.delay || "-",
-        "Created At": task?.createdAt
-          ? new Date(task.createdAt).toLocaleString()
-          : "-",
-        "Updated At": task?.updatedAt
-          ? new Date(task.updatedAt).toLocaleString()
-          : "-",
+        // "Created At": task?.createdAt
+        //   ? new Date(task.createdAt).toLocaleString()
+        //   : "-",
+        // "Updated At": task?.updatedAt
+        //   ? new Date(task.updatedAt).toLocaleString()
+        //   : "-",
       }));
 
       const worksheet = XLSX.utils.json_to_sheet(dataToExport);
@@ -1628,7 +1681,7 @@ const MyTask = () => {
     }
   };
 
-  // 🟢 BIDIRECTIONAL SYNCHRONIZATION: STATS CARD CLICK -> DROPDOWN SELECTION
+  // BIDIRECTIONAL SYNCHRONIZATION: STATS CARD CLICK -> DROPDOWN SELECTION
   const handleStatClick = (statType) => {
     setSelectedStatFilter(statType);
     setLocalCurrentPage(1);
@@ -1673,6 +1726,10 @@ const MyTask = () => {
         page: localCurrentPage,
         limit: localItemsPerPage,
         search: debouncedSearch || undefined,
+        ...(sortConfig.key && {
+          sortBy: sortConfig.key,
+          sortOrder: sortConfig.direction,
+        }),
         filters: {
           stat: selectedStatFilter || null,
           taskCategory: selectedStatFilter
@@ -1753,6 +1810,10 @@ const MyTask = () => {
           page: localCurrentPage,
           limit: localItemsPerPage,
           search: debouncedSearch || undefined,
+          ...(sortConfig.key && {
+            sortBy: sortConfig.key,
+            sortOrder: sortConfig.direction,
+          }),
           filters: {
             stat: selectedStatFilter || null,
             taskCategory: selectedStatFilter
@@ -1895,6 +1956,8 @@ const MyTask = () => {
   if (status === "failed")
     return <div className="p-6 text-red-500">Error: {error}</div>;
 
+  const isTableLoading = status === "loading" || isFetching;
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 p-6">
       <div className="mx-auto">
@@ -1912,6 +1975,10 @@ const MyTask = () => {
                     page: localCurrentPage,
                     limit: localItemsPerPage,
                     search: debouncedSearch || undefined,
+                    ...(sortConfig.key && {
+                      sortBy: sortConfig.key,
+                      sortOrder: sortConfig.direction,
+                    }),
                     filters: {
                       stat: selectedStatFilter || null,
                       taskCategory: selectedStatFilter
@@ -1966,7 +2033,7 @@ const MyTask = () => {
                 selectedFilterTaskType={selectedFilterTaskType}
                 setSelectedFilterTaskType={setSelectedFilterTaskType}
                 selectedFilterStatus={selectedFilterStatus}
-                onFilterStatusChange={handleDropdownStatusChange} // 🟢 SYNCHRONIZED STATUS CHANGE
+                onFilterStatusChange={handleDropdownStatusChange}
                 showExport={true}
                 onExport={handleExport}
                 isExporting={isExporting}
@@ -1979,73 +2046,67 @@ const MyTask = () => {
 
               {/* DATA TABLE */}
               <div className="space-y-4">
-                {status === "loading" || isFetching ? (
-                  <div className="text-center py-10 flex flex-col items-center gap-2">
-                    <RefreshCcw className="animate-spin h-6 w-6 text-blue-500" />
-                    <p>Loading tasks...</p>
+                {/* Visual Indicator of Current Filter Mode */}
+                {selectedStatFilter === "total" && (
+                  <div className="text-sm font-bold text-blue-600 mb-2">
+                    Showing All Assigned Tasks
                   </div>
-                ) : (
-                  <>
-                    {/* Visual Indicator of Current Filter Mode */}
-                    {selectedStatFilter === "total" && (
-                      <div className="text-sm font-bold text-blue-600 mb-2">
-                        Showing All Assigned Tasks
-                      </div>
-                    )}
-                    {selectedStatFilter === "overdue" && (
-                      <div className="text-sm font-bold text-red-600 mb-2">
-                        Showing Overdue Pending Tasks
-                      </div>
-                    )}
-                    {selectedStatFilter === "pending" && (
-                      <div className="text-sm font-bold text-yellow-600 mb-2">
-                        Showing Pending Tasks
-                      </div>
-                    )}
-
-                    {searchTerm && (
-                      <div className="text-sm text-gray-600 mb-2">
-                        Searching for: "
-                        <span className="font-semibold">{searchTerm}</span>"
-                      </div>
-                    )}
-
-                    <TooltipProvider>
-                      <TodayTasksTable
-                        tasks={fetchedTasks}
-                        upcomingRecurringTasks={upcomingRecurringTasks}
-                        onEdit={handleEditClick}
-                        onChecklist={handleChecklistClick}
-                        onToggleComplete={handleToggleComplete}
-                        onDelete={handleDeleteClick}
-                        onViewDescription={(task) =>
-                          handleViewDescription(task.description)
-                        }
-                        currentPage={localCurrentPage}
-                        itemsPerPage={localItemsPerPage}
-                        allUsers={allUsers}
-                        handleCompleteClick={handleCompleteClick}
-                        setSelectedQueryTask={setSelectedQueryTask}
-                        setQueryDrawerOpen={setQueryDrawerOpen}
-                        setRaiseQueryModalOpen={setRaiseQueryModalOpen}
-                        unreadMap={unreadMap}
-                        setUnreadMap={setUnreadMap}
-                        setSubmissionModalOpen={setSubmissionModalOpen}
-                        setSelectedSubmissionTask={setSelectedSubmissionTask}
-                        canUpdate={canUpdate}
-                      />
-                    </TooltipProvider>
-
-                    <Pagination
-                      totalItems={totalTasks}
-                      itemsPerPage={localItemsPerPage}
-                      setItemsPerPage={setLocalItemsPerPage}
-                      currentPage={localCurrentPage}
-                      onPageChange={setLocalCurrentPage}
-                      isLoading={status === "loading"}
-                    />
-                  </>
                 )}
+                {selectedStatFilter === "overdue" && (
+                  <div className="text-sm font-bold text-red-600 mb-2">
+                    Showing Overdue Pending Tasks
+                  </div>
+                )}
+                {selectedStatFilter === "pending" && (
+                  <div className="text-sm font-bold text-yellow-600 mb-2">
+                    Showing Pending Tasks
+                  </div>
+                )}
+
+                {searchTerm && (
+                  <div className="text-sm text-gray-600 mb-2">
+                    Searching for: "
+                    <span className="font-semibold">{searchTerm}</span>"
+                  </div>
+                )}
+
+                <TooltipProvider>
+                  <TodayTasksTable
+                    tasks={fetchedTasks}
+                    upcomingRecurringTasks={upcomingRecurringTasks}
+                    onEdit={handleEditClick}
+                    onChecklist={handleChecklistClick}
+                    onToggleComplete={handleToggleComplete}
+                    onDelete={handleDeleteClick}
+                    onViewDescription={(task) =>
+                      handleViewDescription(task.description)
+                    }
+                    currentPage={localCurrentPage}
+                    itemsPerPage={localItemsPerPage}
+                    allUsers={allUsers}
+                    handleCompleteClick={handleCompleteClick}
+                    setSelectedQueryTask={setSelectedQueryTask}
+                    setQueryDrawerOpen={setQueryDrawerOpen}
+                    setRaiseQueryModalOpen={setRaiseQueryModalOpen}
+                    unreadMap={unreadMap}
+                    setUnreadMap={setUnreadMap}
+                    setSubmissionModalOpen={setSubmissionModalOpen}
+                    setSelectedSubmissionTask={setSelectedSubmissionTask}
+                    canUpdate={canUpdate}
+                    sortConfig={sortConfig}
+                    onSort={handleSort}
+                    isLoading={isTableLoading}
+                  />
+                </TooltipProvider>
+
+                <Pagination
+                  totalItems={totalTasks}
+                  itemsPerPage={localItemsPerPage}
+                  setItemsPerPage={setLocalItemsPerPage}
+                  currentPage={localCurrentPage}
+                  onPageChange={setLocalCurrentPage}
+                  isLoading={isTableLoading}
+                />
               </div>
             </Tabs>
           </CardContent>

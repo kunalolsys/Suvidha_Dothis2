@@ -14,7 +14,46 @@ import { sendNotification } from "../services/telegram/services/taskTelegramServ
 import { taskAssignedTemplate } from "../services/templates/taskAssignedTemp.js";
 import sendEmail from "../services/emailService.js";
 
-// Helper: Check if today matches the frequency criteria
+// Helper: Check if today matches Monthly week-wise occurrence (e.g., First Saturday, Last Monday)
+const isMonthlyWeekWiseMatch = (todayMoment, occurrence, weekDay) => {
+  if (!occurrence || !weekDay) return false;
+
+  const days = [
+    "sunday",
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+  ];
+  const targetDayIndex = days.indexOf(String(weekDay).toLowerCase());
+  if (targetDayIndex === -1 || todayMoment.day() !== targetDayIndex) {
+    return false;
+  }
+
+  const normalizedOcc = String(occurrence).toLowerCase();
+  const dateOfMonth = todayMoment.date(); // 1..31
+  const daysInMonth = todayMoment.daysInMonth();
+
+  if (normalizedOcc === "last") {
+    return dateOfMonth + 7 > daysInMonth;
+  }
+
+  const occurrenceMap = {
+    first: 1,
+    second: 2,
+    third: 3,
+    fourth: 4,
+  };
+
+  const targetOccurrence = occurrenceMap[normalizedOcc];
+  if (!targetOccurrence) return false;
+
+  const currentOccurrence = Math.ceil(dateOfMonth / 7);
+  return currentOccurrence === targetOccurrence;
+};
+
 const isTaskDueToday = (task) => {
   // Always evaluate today in Asia/Kolkata timezone
   const today = moment().tz("Asia/Kolkata").startOf("day");
@@ -69,6 +108,15 @@ const isTaskDueToday = (task) => {
     }
 
     case "Monthly":
+      // New Frequency: Monthly Week-Wise (e.g., First Saturday, Last Monday)
+      if (task.monthlyScheduleType === "week") {
+        return isMonthlyWeekWiseMatch(
+          today,
+          task.monthlyOccurrence,
+          task.monthlyWeekDay,
+        );
+      }
+      // Old Working Logic: Monthly Date-Wise
       return today.date() === start.date();
 
     case "Quarterly": {
@@ -119,10 +167,18 @@ export const generateRecurringTasks = async (recurringTaskId = null) => {
         }
 
         // CHECK USER WORKSHIFT FOR TODAY
-        const assignedUser = await User.findById(task.assignedTo)
+        const assignedUser = await User.findOne({
+          _id: task.assignedTo,
+          isDeleted: { $ne: true },
+        })
           .populate("assignShift")
           .lean();
-
+        if (!assignedUser) {
+          console.log(
+            `⚠️ Skipping ${task.TaskId}: Assigned user ${task.assignedTo} is deleted or inactive`,
+          );
+          continue;
+        }
         if (!assignedUser?.assignShift) {
           console.log(
             `⚠️ Skipping ${task.TaskId}: No workshift for user ${task.assignedTo}`,

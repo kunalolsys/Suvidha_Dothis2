@@ -36,6 +36,7 @@ import {
 import { useFormik } from "formik";
 import * as Yup from "yup";
 import { Switch } from "../../components/ui/switch";
+import { Eye, EyeOff } from "lucide-react";
 
 // --- Main Component ---
 const AddUser = () => {
@@ -53,7 +54,8 @@ const AddUser = () => {
   const { workShifts, status: workShiftStatus } = useSelector(
     (state) => state.workShifts,
   );
-
+  const [showPass, setShowPass] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const formik = useFormik({
     initialValues: {
       name: "",
@@ -431,14 +433,25 @@ const AddUser = () => {
               <Label htmlFor="password">
                 Password<span className="text-red-500">*</span>
               </Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="Password"
-                value={formik.values.password}
-                onChange={formik.handleChange}
-                onBlur={formik.handleBlur}
-              />
+              <div className="relative">
+                <Input
+                  id="password"
+                  type={showPass ? "text" : "password"}
+                  placeholder="Password"
+                  autoComplete="new-password"
+                  value={formik.values.password}
+                  onChange={formik.handleChange}
+                  onBlur={formik.handleBlur}
+                  className="pr-9"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPass(!showPass)}
+                  className="absolute right-2.5 top-2.5 text-gray-500"
+                >
+                  {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
               {formik.touched.password && formik.errors.password && (
                 <span className="text-red-500 text-xs">
                   {formik.errors.password}
@@ -450,13 +463,24 @@ const AddUser = () => {
               <Label htmlFor="confirmPassword">
                 Confirm Password<span className="text-red-500">*</span>
               </Label>
-              <Input
-                id="confirmPassword"
-                type="password"
-                placeholder="Confirm Password"
-                value={formik.values.confirmPassword}
-                onChange={formik.handleChange}
-              />
+              <div className="relative">
+                <Input
+                  id="confirmPassword"
+                  type={showConfirm ? "text" : "password"}
+                  placeholder="Confirm Password"
+                  autoComplete="new-password"
+                  value={formik.values.confirmPassword}
+                  onChange={formik.handleChange}
+                  className="pr-9"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirm(!showConfirm)}
+                  className="absolute right-2.5 top-2.5 text-gray-500"
+                >
+                  {showConfirm ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
               {formik.touched.confirmPassword &&
                 formik.errors.confirmPassword && (
                   <span className="text-red-500 text-xs">

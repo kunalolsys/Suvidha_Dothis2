@@ -22,6 +22,8 @@ import {
   parseFrequencyToHours,
 } from "../utils/fmsDateCalculator.js";
 import Role from "../models/Role.js";
+import { sendNotificationAlert } from "../utils/notificationHelper.js";
+import { handleAsync } from "../utils/handleAsync.js";
 
 // =======================================================
 // CREATE BUCKET TASK
@@ -666,26 +668,13 @@ export const getSingleTaskBucket = async (req, res) => {
 export const distributeTaskBucket = async (req, res) => {
   try {
     const { id } = req.params;
-    const { selectedUsers = [], assignments = [] } = req.body;
+    const { selectedUsers = [], taskEndDays, description } = req.body;
 
     const userId = req.cookies?.userId || req.user?._id;
-
-    // Build department lookup map from assignments array: { [userId]: departmentId }
-    const departmentMap = {};
-    if (Array.isArray(assignments) && assignments.length > 0) {
-      assignments.forEach((item) => {
-        if (item.userId && item.departmentId) {
-          departmentMap[String(item.userId)] = item.departmentId;
-        }
-      });
-    }
-
-    // Resolve list of target user IDs
-    const targetUserIds =
-      selectedUsers.length > 0 ? selectedUsers : Object.keys(departmentMap);
+    const targetUserIds = selectedUsers;
 
     // =====================================================
-    // GET BUCKET
+    // 1. GET BUCKET & PREVENT RE-DISTRIBUTION
     // =====================================================
     const bucket = await TaskBucket.findById(id);
 
@@ -696,8 +685,20 @@ export const distributeTaskBucket = async (req, res) => {
       });
     }
 
+    if (
+      bucket.distributionStatus === "Distributed" ||
+      bucket.status === "Completed" ||
+      (Array.isArray(bucket.generatedTasks) && bucket.generatedTasks.length > 0)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "This task bucket has already been distributed and cannot be reassigned.",
+      });
+    }
+
     // =====================================================
-    // GET USERS (FETCH ALL SELECTED NON-DELETED USERS)
+    // 2. GET VALID ACTIVE USERS
     // =====================================================
     const users = await User.find({
       _id: { $in: targetUserIds },
@@ -711,21 +712,16 @@ export const distributeTaskBucket = async (req, res) => {
       });
     }
 
-    // 🟢 REPORTING MANAGER CHECK REMOVED: All fetched users are valid
-    const validUsers = users;
-
-    // =====================================================
-    // DUPLICATE CHECK
-    // =====================================================
+    // Duplicate protection
     const [existingDelegation, existingRecurring] = await Promise.all([
       DelegationTask.find({
         bucketId: bucket._id,
-        assignedTo: { $in: validUsers.map((u) => u._id) },
+        assignedTo: { $in: users.map((u) => u._id) },
       }).select("assignedTo"),
 
       RecurringTask.find({
         bucketId: bucket._id,
-        assignedTo: { $in: validUsers.map((u) => u._id) },
+        assignedTo: { $in: users.map((u) => u._id) },
       }).select("assignedTo"),
     ]);
 
@@ -734,12 +730,7 @@ export const distributeTaskBucket = async (req, res) => {
       ...existingRecurring.map((t) => String(t.assignedTo)),
     ]);
 
-    // =====================================================
-    // FILTER ONLY NEW USERS
-    // =====================================================
-    const usersToAssign = validUsers.filter(
-      (u) => !assignedSet.has(String(u._id)),
-    );
+    const usersToAssign = users.filter((u) => !assignedSet.has(String(u._id)));
 
     if (!usersToAssign.length) {
       return res.status(200).json({
@@ -749,8 +740,19 @@ export const distributeTaskBucket = async (req, res) => {
       });
     }
 
+    // Use updated taskEndDays / description if sent from UI, else bucket defaults
+    const effectiveBucketDays =
+      taskEndDays !== undefined && taskEndDays !== null
+        ? Number(taskEndDays)
+        : bucket.taskEndDays;
+
+    const effectiveBucketDescription =
+      description && String(description).trim()
+        ? String(description).trim()
+        : bucket.description;
+
     // =====================================================
-    // CREATE TASKS USING FMS TIMING ENGINE
+    // 3. CREATE TASKS USING FMS TIMING ENGINE
     // =====================================================
     const createdTasks = [];
 
@@ -766,65 +768,46 @@ export const distributeTaskBucket = async (req, res) => {
         });
       }
 
-      // Resolve department
-      const deptId =
-        departmentMap[String(user._id)] ||
-        assignedUser?.department?.[0]?._id ||
-        assignedUser?.department?.[0] ||
-        assignedUser?.department ||
-        null;
-
-      if (!deptId) {
-        return res.status(400).json({
-          success: false,
-          message: `Department is required for ${assignedUser?.name}`,
-        });
-      }
+      const deptId = Array.isArray(assignedUser.department)
+        ? assignedUser.department[0]?._id || assignedUser.department[0] || null
+        : assignedUser.department?._id || assignedUser.department || null;
 
       const workShift = assignedUser.assignShift;
 
       // ============================================================
-      // 🟢 1. START DATE CALCULATIONS (FMS ENGINE)
+      // 🟢 START DATE FIX: Keep exact bucket date + snap to Shift Start
+      // (Only move to next day if that date is Holiday or Non-Working Day)
       // ============================================================
       let baseStartDate = bucket.startDate
         ? new Date(bucket.startDate)
         : new Date();
 
-      if (baseStartDate.getHours() === 0 && baseStartDate.getMinutes() === 0) {
-        baseStartDate = snapToShiftTime(baseStartDate, workShift, true);
-      }
+      baseStartDate = snapToShiftTime(baseStartDate, workShift, true);
 
       const isWorking = await isWorkingDay(baseStartDate, workShift, deptId);
       const isHoli = await isHoliday(baseStartDate, deptId);
-      const shiftEnd = snapToShiftTime(baseStartDate, workShift, false);
 
-      if (!isWorking || isHoli || baseStartDate >= shiftEnd) {
-        let nextDay = new Date(baseStartDate);
-        if (baseStartDate >= shiftEnd) {
-          nextDay.setDate(nextDay.getDate() + 1);
-        }
-
+      if (!isWorking || isHoli) {
         const nextWorkingShift = await nextWorkingShiftDate(
-          nextDay,
+          baseStartDate,
           workShift._id,
           {},
           deptId,
         );
-
         baseStartDate = snapToShiftTime(nextWorkingShift, workShift, true);
       }
 
       const effectiveStartDate = baseStartDate;
 
       // ============================================================
-      // 🟢 2. DUE DATE CALCULATIONS (FMS ENGINE)
+      // 🟢 DUE DATE CALCULATIONS (FMS ENGINE)
       // ============================================================
       let effectiveDueDate = null;
 
-      if (bucket.taskEndDays && bucket.taskEndDays > 0) {
+      if (effectiveBucketDays && effectiveBucketDays > 0) {
         const endDaysParsed = {
           isDay: true,
-          value: Number(bucket.taskEndDays),
+          value: Number(effectiveBucketDays),
         };
         effectiveDueDate = await calculateCalendarDurationWithShiftSnap(
           effectiveStartDate,
@@ -843,8 +826,7 @@ export const distributeTaskBucket = async (req, res) => {
         }
       }
 
-      // Calculate taskEndDays sync
-      let calculatedTaskEndDays = bucket.taskEndDays;
+      let calculatedTaskEndDays = effectiveBucketDays;
       if (effectiveStartDate && effectiveDueDate) {
         const startDay = new Date(effectiveStartDate);
         const dueDay = new Date(effectiveDueDate);
@@ -860,37 +842,27 @@ export const distributeTaskBucket = async (req, res) => {
       // ============================
       const basePayload = {
         bucketId: bucket._id,
-
         title: bucket.title,
-        description: bucket.description,
-
+        description: effectiveBucketDescription,
         assignedTo: assignedUser._id,
-
         assignedBy: userId,
         createdBy: userId,
         updatedBy: userId,
-
         departmentOfAssignToUser: deptId,
-
         startDate: effectiveStartDate,
         dueDate: effectiveDueDate,
         plannedStartDate: effectiveStartDate,
         plannedDueDate: effectiveDueDate,
-
         taskEndDays: calculatedTaskEndDays,
         taskEndTime: bucket.taskEndTime || null,
-
         checklist: bucket.checklist || [],
-
         isDependent: bucket.isDependent || false,
         dependencyConfig: bucket.dependencyConfig,
-
         status: "Pending",
         isVisible: false,
       };
 
       let task;
-
       if (bucket.isRecurrent) {
         task = new RecurringTask({
           ...basePayload,
@@ -919,10 +891,9 @@ export const distributeTaskBucket = async (req, res) => {
       await task.save();
 
       // =====================================================
-      // REALTIME NOTIFICATION
+      // REALTIME & DB NOTIFICATIONS
       // =====================================================
       const io = getIO();
-
       if (io) {
         io.to(String(assignedUser._id)).emit("notification", {
           type: "TASK_ASSIGNED",
@@ -933,9 +904,6 @@ export const distributeTaskBucket = async (req, res) => {
         });
       }
 
-      // =====================================================
-      // DATABASE NOTIFICATION
-      // =====================================================
       await Notifications.create({
         user: assignedUser._id,
         fromUser: userId,
@@ -951,10 +919,7 @@ export const distributeTaskBucket = async (req, res) => {
       // EMAIL & TELEGRAM (NON-BLOCKING)
       // =====================================================
       if (assignedUser?.email) {
-        const frontendUrl = `${
-          process.env.BASE_URL
-        }/my-day/mytasks?taskId=${task._id}`;
-
+        const frontendUrl = `${process.env.BASE_URL}/my-day/mytasks?taskId=${task._id}`;
         const emailTemplate = taskAssignedTemplate({
           userName: assignedUser.name,
           taskId: task.TaskId,
@@ -989,73 +954,29 @@ export const distributeTaskBucket = async (req, res) => {
     }
 
     // =====================================================
-    // UPDATE GENERATED TASKS IN BUCKET
+    // 4. UPDATE BUCKET AS DISTRIBUTED & LOCK RE-ASSIGNMENT
     // =====================================================
     bucket.generatedTasks.push(...createdTasks);
-
-    // =====================================================
-    // CHECK DISTRIBUTION STATUS ACROSS ALL NON-DELETED USERS
-    // =====================================================
-    let filter = {
-      isDeleted: { $ne: true },
-    };
-
-    const superRole = await Role.findOne({
-      name: { $regex: /^super$/i },
-    }).select("_id");
-
-    if (superRole) {
-      filter.role = { $ne: superRole._id };
-    }
-
-    const allAssignableUsers = await User.find(filter).select("_id");
-    const allUserIds = allAssignableUsers.map((u) => String(u._id));
-
-    const [delegationDistributed, recurringDistributed] = await Promise.all([
-      DelegationTask.find({
-        bucketId: bucket._id,
-        assignedTo: { $in: allUserIds },
-      }).select("assignedTo"),
-      RecurringTask.find({
-        bucketId: bucket._id,
-        assignedTo: { $in: allUserIds },
-      }).select("assignedTo"),
-    ]);
-
-    const distributedUserSet = new Set([
-      ...delegationDistributed.map((t) => String(t.assignedTo)),
-      ...recurringDistributed.map((t) => String(t.assignedTo)),
-    ]);
-
-    const totalUsers = allUserIds.length;
-    const distributedCount = distributedUserSet.size;
-
-    // =====================================================
-    // FINAL STATUS
-    // =====================================================
-    if (distributedCount === 0) {
-      bucket.distributionStatus = "Pending";
-    } else if (distributedCount < totalUsers) {
-      bucket.distributionStatus = "Partially Distributed";
-    } else {
-      bucket.distributionStatus = "Distributed";
-    }
+    bucket.assignedTargetUsers = usersToAssign.map((u) => u._id);
+    bucket.targetUserDistribution = usersToAssign.map((u) => ({
+      user: u._id,
+      status: "Distributed",
+      distributedAt: new Date(),
+    }));
+    bucket.distributionStatus = "Distributed";
 
     await bucket.save();
 
-    // =====================================================
-    // RESPONSE
-    // =====================================================
     return res.status(200).json({
       success: true,
       message: "Tasks distributed successfully",
       data: createdTasks,
     });
   } catch (err) {
-    console.error(err);
+    console.error("distributeTaskBucket Error:", err);
     return res.status(500).json({
       success: false,
-      message: err.message,
+      message: err.message || "Failed to distribute task bucket",
     });
   }
 };
@@ -1238,18 +1159,15 @@ export const getBucketReportingUsers = async (req, res) => {
 export const completeTaskBucket = async (req, res) => {
   try {
     const { id } = req.params;
-
     const { remark } = req.body;
-
     const userId = req.cookies.userId || req.user._id;
 
     // =====================================================
-    // GET BUCKET
+    // GET BUCKET (Populate createdBy with Telegram fields)
     // =====================================================
-
     const bucket = await TaskBucket.findById(id).populate(
       "createdBy",
-      "name email",
+      "name email telegramChatId telegramNotificationsEnabled isDeleted isActive",
     );
 
     if (!bucket) {
@@ -1262,7 +1180,6 @@ export const completeTaskBucket = async (req, res) => {
     // =====================================================
     // ALREADY COMPLETED
     // =====================================================
-
     if (bucket.status === "Completed") {
       return res.status(400).json({
         success: false,
@@ -1273,7 +1190,6 @@ export const completeTaskBucket = async (req, res) => {
     // =====================================================
     // GET ALL RELATED TASKS
     // =====================================================
-
     const relatedTasks = await Task.find({
       bucketId: bucket._id,
     }).select("assignedTo status completedAt title");
@@ -1281,7 +1197,6 @@ export const completeTaskBucket = async (req, res) => {
     // =====================================================
     // CHECK ALL TASKS COMPLETED
     // =====================================================
-
     const incompleteTasks = relatedTasks.filter(
       (task) => task.status !== "Completed",
     );
@@ -1296,13 +1211,10 @@ export const completeTaskBucket = async (req, res) => {
     // =====================================================
     // COMPLETE BUCKET
     // =====================================================
-
+    const completedTime = new Date();
     bucket.status = "Completed";
-
     bucket.completedBy = userId;
-
-    bucket.completedAt = new Date();
-
+    bucket.completedAt = completedTime;
     bucket.remark = remark || "";
 
     await bucket.save();
@@ -1310,41 +1222,77 @@ export const completeTaskBucket = async (req, res) => {
     // =====================================================
     // COMPLETED USER
     // =====================================================
-
     const completedUser = await User.findById(userId).select("name email");
 
     // =====================================================
-    // SEND EMAIL
+    // NOTIFICATIONS (SOCKET IO + DB + EMAIL + TELEGRAM)
     // =====================================================
+    const creator = bucket.createdBy;
+    const isDifferentUser =
+      creator?._id && creator._id.toString() !== userId.toString();
 
-    if (bucket.createdBy?.email) {
-      const frontendUrl = `${process.env.BASE_URL}/delegate/bucket-view`;
-      const emailTemplate = bucketCompletedTemplate({
-        bucketId: bucket.bucketId,
-        bucketTitle: bucket.title,
-        completedBy: completedUser?.name,
-        completedAt: new Date(bucket.completedAt).toLocaleString("en-IN"),
-        remark,
-        frontendUrl,
+    if (isDifferentUser && !creator.isDeleted && creator.isActive !== false) {
+      const io = getIO();
+      const formattedCompletedAt = completedTime.toLocaleString("en-IN", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
       });
 
-      sendEmail({
-        to: bucket.createdBy.email,
-        subject: emailTemplate.subject,
-        html: emailTemplate.html,
+      // 1. Socket IO Realtime Notification
+      if (io) {
+        io.to(creator._id.toString()).emit("notification", {
+          type: "BUCKET_COMPLETED",
+          title: "Task Bucket Completed",
+          description: `Bucket "${bucket.title}" (${bucket.bucketId}) has been completed.`,
+          bucketId: bucket._id,
+        });
+      }
+
+      // 2. Database In-App Notification
+      await Notifications.create({
+        user: creator._id,
+        fromUser: userId,
+        type: "BUCKET_COMPLETED",
+        title: "Task Bucket Completed",
+        description: `Bucket "${bucket.title}" (${bucket.bucketId}) completed by ${completedUser?.name || "User"}.`,
+        relatedId: bucket._id,
+      });
+
+      // 3. Email Notification
+      if (creator.email) {
+        const frontendUrl = `${process.env.BASE_URL}/delegate/bucket-view`;
+        const emailTemplate = bucketCompletedTemplate({
+          bucketId: bucket.bucketId,
+          bucketTitle: bucket.title,
+          completedBy: completedUser?.name,
+          completedAt: formattedCompletedAt,
+          remark,
+          frontendUrl,
+        });
+
+        sendEmail({
+          to: creator.email,
+          subject: emailTemplate.subject,
+          html: emailTemplate.html,
+        }).catch((e) => console.error("Bucket Email Error:", e.message));
+      }
+
+      // 4. Existing Notification Helper
+      sendNotification({
+        type: "BUCKET_COMPLETED",
+        task: bucket,
+        actor: completedUser,
+        userId: creator._id,
       });
     }
-    sendNotification({
-      type: "BUCKET_COMPLETED",
-      task: bucket,
-      actor: completedUser,
-      userId: bucket.createdBy._id,
-    });
 
     // =====================================================
     // RESPONSE
     // =====================================================
-
     return res.status(200).json({
       success: true,
       message: "Bucket completed successfully",
@@ -1352,7 +1300,6 @@ export const completeTaskBucket = async (req, res) => {
     });
   } catch (err) {
     console.error(err);
-
     return res.status(500).json({
       success: false,
       message: err.message || "Failed to complete bucket",
@@ -1810,3 +1757,41 @@ export const updateTaskBucket = async (req, res) => {
     });
   }
 };
+export const getUndistributedTaskBuckets = handleAsync(async (req, res) => {
+  const { search = "", includePartial = "true" } = req.query;
+
+  const allowedDistributionStatuses =
+    String(includePartial).toLowerCase() === "false"
+      ? ["Pending"]
+      : ["Pending", "Partially Distributed"];
+
+  const filter = {
+    isDeleted: { $ne: true },
+    status: { $ne: "Completed" },
+    distributionStatus: { $in: allowedDistributionStatuses },
+  };
+
+  if (search && String(search).trim() !== "") {
+    const keyword = String(search).trim();
+    filter.$or = [
+      { bucketId: { $regex: keyword, $options: "i" } },
+      { title: { $regex: keyword, $options: "i" } },
+    ];
+  }
+
+  const buckets = await TaskBucket.find(filter)
+    .select(
+      "bucketId title description status distributionStatus assignmentMode targetRole targetUsers startDate taskEndDays isRecurrent frequency createdBy createdAt",
+    )
+    .populate("createdBy", "name employeeCode")
+    .populate("targetRole", "name displayName")
+    .populate("targetUsers", "name employeeCode")
+    .sort({ createdAt: -1 })
+    .lean();
+
+  return res.status(200).json({
+    success: true,
+    count: buckets.length,
+    data: buckets,
+  });
+});

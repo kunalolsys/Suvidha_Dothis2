@@ -937,6 +937,7 @@ const TodayTasksTable = ({
             ))}
             <TableHead>Description</TableHead>
             <TableHead>Due Date & Time</TableHead>
+            <TableHead>Completed At</TableHead>
             <TableHead>Frequency</TableHead>
             <TableHead>Time Left</TableHead>
             <TableHead>Status</TableHead>
@@ -1082,6 +1083,16 @@ const TodayTasksTable = ({
 
                     <TableCell>
                       {task?.dueDate ? formatDate(task.dueDate) : "-"}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      {task.status === "Completed" &&
+                      (task.completedAt || task.updatedAt) ? (
+                        <span className="">
+                          {formatDate(task.completedAt || task.updatedAt)}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400">-</span>
+                      )}
                     </TableCell>
                     <TableCell>{task?.frequency ?? "-"}</TableCell>
                     <TableCell className="whitespace-nowrap">
@@ -1584,12 +1595,12 @@ const FmsTasks = () => {
           ? new Date(task.dueDate).toLocaleDateString()
           : "-",
         Delay: task?.delay || "-",
-        "Created At": task?.createdAt
-          ? new Date(task.createdAt).toLocaleString()
-          : "-",
-        "Updated At": task?.updatedAt
-          ? new Date(task.updatedAt).toLocaleString()
-          : "-",
+        // "Created At": task?.createdAt
+        //   ? new Date(task.createdAt).toLocaleString()
+        //   : "-",
+        // "Updated At": task?.updatedAt
+        //   ? new Date(task.updatedAt).toLocaleString()
+        //   : "-",
       }));
 
       const worksheet = XLSX.utils.json_to_sheet(dataToExport);
