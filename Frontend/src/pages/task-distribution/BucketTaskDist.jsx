@@ -43,7 +43,7 @@ const { TextArea } = Input;
 const TaskDistribution = () => {
   // Bucket List & Filters
   const [buckets, setBuckets] = useState([]);
-  const [activeTab, setActiveTab] = useState("Pending"); // "Pending" | "Completed"
+  const [activeTab, setActiveTab] = useState("Pending"); // "Pending" | "Distributed" | "Completed"
   const [bucketSearch, setBucketSearch] = useState("");
   const debouncedBucketSearch = useDebounce(bucketSearch, 350);
 
@@ -76,10 +76,11 @@ const TaskDistribution = () => {
   );
 
   // =========================================================
-  // 1. FETCH BUCKETS BY TAB (Pending / Completed)
+  // 1. FETCH BUCKETS BY TAB (Pending / Distributed / Completed)
   // =========================================================
   const fetchBuckets = async () => {
     try {
+      const apiStatus = activeTab === "Completed" ? "Completed" : "Pending";
       const res = await api.get("/task-buckets", {
         params: {
           search: debouncedBucketSearch || undefined,
@@ -191,6 +192,21 @@ const TaskDistribution = () => {
     }
     return true;
   };
+
+  // Filter buckets per active tab ("Pending" | "Distributed" | "Completed")
+  const displayedBuckets = useMemo(() => {
+    if (activeTab === "Completed") {
+      return buckets.filter((b) => b.status === "Completed");
+    }
+    if (activeTab === "Distributed") {
+      return buckets.filter(
+        (b) => b.status !== "Completed" && isBucketDistributed(b),
+      );
+    }
+    return buckets.filter(
+      (b) => b.status !== "Completed" && !isBucketDistributed(b),
+    );
+  }, [buckets, activeTab]);
 
   // =========================================================
   // 5. LIVE UPDATE BUCKET (PUT /task-buckets/:id)
@@ -366,10 +382,10 @@ const TaskDistribution = () => {
 
   const selectableBuckets = useMemo(
     () =>
-      buckets.filter(
+      displayedBuckets.filter(
         (b) => b.status !== "Completed" && !isBucketDistributed(b),
       ),
-    [buckets],
+    [displayedBuckets],
   );
 
   const handleSelectAllBuckets = (checked) => {
@@ -631,9 +647,9 @@ const TaskDistribution = () => {
                     </div>
                   </div>
 
-                  {/* PENDING / COMPLETED SEGMENTED TABS */}
+                  {/* PENDING / DISTRIBUTED / COMPLETED SEGMENTED TABS */}
                   <div className="bg-slate-100 p-1 rounded-xl border border-slate-200/80 flex items-center gap-1">
-                    {["Pending", "Completed"].map((tab) => {
+                    {["Pending", "Distributed", "Completed"].map((tab) => {
                       const active = activeTab === tab;
                       return (
                         <button
@@ -714,7 +730,7 @@ const TaskDistribution = () => {
               </CardHeader>
 
               <CardContent className="p-5 mt-2">
-                {buckets.length === 0 ? (
+                {displayedBuckets.length === 0 ? (
                   <div className="h-[380px] flex flex-col items-center justify-center text-center">
                     <Empty
                       description={
@@ -726,7 +742,7 @@ const TaskDistribution = () => {
                   </div>
                 ) : (
                   <div className="space-y-3 max-h-[550px] overflow-y-auto pr-1">
-                    {buckets.map((bucket) => {
+                    {displayedBuckets.map((bucket) => {
                       const selectedEntry = selectedBucketsMap[bucket._id];
                       const isSelected = Boolean(selectedEntry);
                       const isCompleted = bucket.status === "Completed";
@@ -743,7 +759,7 @@ const TaskDistribution = () => {
 
                       const currentEndDays = isSelected
                         ? selectedEntry.taskEndDays
-                        : bucket.taskEndDays ?? 1;
+                        : (bucket.taskEndDays ?? 1);
 
                       const assignedPerson =
                         Array.isArray(bucket.assignedTargetUsers) &&

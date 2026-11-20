@@ -8,6 +8,7 @@ import moment from "moment";
 import { handleAsync } from "../utils/handleAsync.js";
 import AppError from "../utils/AppError.js";
 import Role from "../models/Role.js";
+import { isHoliday, isWorkingDay } from "../utils/dateCalculator.js";
 
 // 1. Get/Update Master Configuration (Admin Only)
 export const getMasterConfig = handleAsync(async (req, res) => {
@@ -126,20 +127,15 @@ export const requestTaskExtension = handleAsync(async (req, res, next) => {
     );
   }
 
-  // Verify task due date is within the allowed daysBeforeDueDate window
+  // Verify task due date matches listing rule: dueDate >= thresholdDate
   const daysWindow = Number(master.daysBeforeDueDate ?? 2);
-  const startWindow = moment().startOf("day");
-  const thresholdDate = moment().add(daysWindow, "days").endOf("day");
+  const thresholdDate = moment().add(daysWindow, "days").startOf("day");
   const taskDue = moment(task.dueDate);
 
-  if (
-    !task.dueDate ||
-    taskDue.isBefore(startWindow) ||
-    taskDue.isAfter(thresholdDate)
-  ) {
+  if (!task.dueDate || taskDue.isBefore(thresholdDate)) {
     return next(
       new AppError(
-        `This task is not eligible for extension. Extension requests are only allowed within ${daysWindow} day(s) before the due date.`,
+        `This task is not eligible for extension. Extension requests are only allowed at least ${daysWindow} day(s) before the due date.`,
         400,
       ),
     );
@@ -237,7 +233,7 @@ export const getPendingExtensionRequests = handleAsync(async (req, res) => {
 
 // 5. Admin / Manager: Single-Click Approval or Rejection
 export const reviewExtensionRequest = handleAsync(async (req, res, next) => {
-  const { requestId, action, approvedDays } = req.body; // 🟢 Added approvedDays
+  const { requestId, action, approvedDays, forceApprove = false } = req.body;
   const reviewerId = req.user?._id;
 
   if (!["APPROVE", "REJECT"].includes(action)) {
@@ -273,6 +269,37 @@ export const reviewExtensionRequest = handleAsync(async (req, res, next) => {
 
     const newDueDate = moment(task.dueDate).add(finalDays, "days").toDate();
 
+    // 🔍 Check Holiday / Non-Working Day on calculated newDueDate (same as createTask)
+    const assignedUser = await User.findById(
+      task.assignedTo || user?._id,
+    ).populate("assignShift");
+
+    const workShift = assignedUser?.assignShift;
+    const deptId =
+      task.departmentOfAssignToUser ||
+      (Array.isArray(assignedUser?.department)
+        ? assignedUser.department[0]?._id || assignedUser.department[0]
+        : assignedUser?.department?._id || assignedUser?.department) ||
+      assignedUser?._id;
+
+    const isDueHoliday = await isHoliday(newDueDate, deptId);
+    const isDueWorking = workShift
+      ? await isWorkingDay(newDueDate, workShift, deptId)
+      : true;
+
+    if ((isDueHoliday || !isDueWorking) && !forceApprove) {
+      const reasonLabel = isDueHoliday ? "Holiday" : "Non-Working Day";
+      const formattedDate = moment(newDueDate).format("DD MMM YYYY (dddd)");
+
+      return res.status(409).json({
+        success: false,
+        isNonWorkingAlert: true,
+        reason: reasonLabel,
+        proposedDueDate: newDueDate,
+        message: `Alert: The revised due date (${formattedDate}) falls on a ${reasonLabel}. Please adjust the extension days or confirm to proceed anyway.`,
+      });
+    }
+
     task.dueDate = newDueDate;
     if (task.plannedDueDate) {
       task.plannedDueDate = newDueDate;
@@ -284,7 +311,7 @@ export const reviewExtensionRequest = handleAsync(async (req, res, next) => {
     await task.save();
 
     extRequest.status = "APPROVED";
-    extRequest.approvedExtensionDays = finalDays; // Optional: save final approved days
+    extRequest.approvedExtensionDays = finalDays;
     extRequest.reviewedBy = reviewerId;
     extRequest.reviewedAt = new Date();
     await extRequest.save();
