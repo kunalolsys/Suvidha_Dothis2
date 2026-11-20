@@ -594,9 +594,15 @@ export const getTaskBuckets = async (req, res) => {
         filter.$and = [];
       }
 
-      filter.$and.push({
-        status,
-      });
+      if (status.toLowerCase() === "distributed") {
+        filter.$and.push({
+          distributionStatus: "Distributed",
+        });
+      } else {
+        filter.$and.push({
+          status,
+        });
+      }
     }
 
     // =====================================================
