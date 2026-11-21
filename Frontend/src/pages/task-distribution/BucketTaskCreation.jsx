@@ -197,6 +197,14 @@ const BucketCreation = () => {
       return roleMatch && allowedUser;
     });
   }, [selectedMemberRole, users, masterUsers]);
+  const roleUsers = useMemo(() => {
+    if (!selectedRole) return [];
+    return users.filter(
+      (u) =>
+        !u.isDeleted &&
+        (u.role?._id === selectedRole || u.role === selectedRole),
+    );
+  }, [selectedRole, users]);
   const fetchBucketById = async () => {
     try {
       const res = await api.get(`/task-buckets/${bucketId}`);
@@ -221,6 +229,15 @@ const BucketCreation = () => {
           typeof data.targetRole === "object"
             ? data.targetRole?._id
             : data.targetRole,
+        );
+
+        const existingUsers =
+          (data.targetUsers?.length > 0
+            ? data.targetUsers
+            : data.assignedTargetUsers) || [];
+
+        setSelectedMembers(
+          existingUsers.map((u) => (typeof u === "object" ? u._id : u)),
         );
       }
 
@@ -268,7 +285,6 @@ const BucketCreation = () => {
 
     return users.filter((u) => selectedMembers.includes(u._id));
   }, [assignmentMode, selectedRole, selectedMembers, roles, users]);
-
   const addChecklistItem = () => {
     if (!checklistItem.trim()) return;
 
@@ -289,14 +305,14 @@ const BucketCreation = () => {
 
   const assignedUsers = useMemo(() => {
     if (assignmentMode === "Role") {
-      return users.filter(
-        (u) => u.role?._id === selectedRole || u.role === selectedRole,
-      );
+      if (selectedMembers.length > 0) {
+        return roleUsers.filter((u) => selectedMembers.includes(u._id));
+      }
+      return roleUsers;
     }
 
     return users.filter((u) => selectedMembers.includes(u._id));
-  }, [assignmentMode, selectedRole, selectedMembers, users]);
-
+  }, [assignmentMode, roleUsers, selectedMembers, users]);
   const handleCreateTask = async () => {
     try {
       if (!title.trim()) {
@@ -359,6 +375,9 @@ const BucketCreation = () => {
 
       if (assignmentMode === "Role") {
         formData.append("targetRole", selectedRole);
+        if (selectedMembers.length > 0) {
+          formData.append("targetUsers", JSON.stringify(selectedMembers));
+        }
       }
 
       if (assignmentMode === "Users") {
@@ -621,28 +640,56 @@ const BucketCreation = () => {
               </CardHeader>
               <CardContent className="p-6 space-y-5">
                 {assignmentMode === "Role" ? (
-                  <div className="space-y-2">
-                    <Label>Select Role</Label>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    {/* ROLE */}
+                    <div className="space-y-2">
+                      <Label>Select Role</Label>
 
-                    <AntdSelect
-                      size="large"
-                      placeholder="Choose role"
-                      value={selectedRole || undefined}
-                      disabled
-                      onChange={setSelectedRole}
-                      style={{ width: "100%" }}
-                      options={roles
-                        .filter(
-                          (r) =>
-                            !["owner", "member"].includes(
-                              r.name?.toLowerCase(),
-                            ),
-                        )
-                        .map((r) => ({
-                          value: r._id,
-                          label: r.displayName || r.name,
+                      <AntdSelect
+                        size="large"
+                        placeholder="Choose role"
+                        value={selectedRole || undefined}
+                        disabled
+                        onChange={(value) => {
+                          setSelectedRole(value);
+                          setSelectedMembers([]);
+                        }}
+                        style={{ width: "100%" }}
+                        options={roles
+                          .filter(
+                            (r) => !["owner"].includes(r.name?.toLowerCase()),
+                          )
+                          .map((r) => ({
+                            value: r._id,
+                            label: r.displayName || r.name,
+                          }))}
+                      />
+                    </div>
+
+                    {/* USERS OF SELECTED ROLE */}
+                    <div className="space-y-2">
+                      <Label>Select Users</Label>
+
+                      <AntdSelect
+                        allowClear
+                        showSearch
+                        size="large"
+                        placeholder={
+                          roleUsers.length > 0
+                            ? "All users in role (or select a user)"
+                            : "No users found in this role"
+                        }
+                        disabled={!selectedRole || roleUsers.length === 0}
+                        value={selectedMembers[0] || undefined}
+                        onChange={(val) => setSelectedMembers(val ? [val] : [])}
+                        style={{ width: "100%" }}
+                        optionFilterProp="label"
+                        options={roleUsers.map((u) => ({
+                          value: u._id,
+                          label: `${u.displayName || u.name}`,
                         }))}
-                    />
+                      />
+                    </div>
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -907,34 +954,64 @@ const BucketCreation = () => {
 
                 {assignmentMode === "Role" ? (
                   selectedRole ? (
-                    <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4">
-                      <div className="flex items-center gap-3">
-                        <div className="h-12 w-12 rounded-2xl bg-blue-100 flex items-center justify-center">
-                          <Briefcase className="w-5 h-5 text-blue-600" />
+                    <div className="space-y-3">
+                      <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4">
+                        <div className="flex items-center gap-3">
+                          <div className="h-12 w-12 rounded-2xl bg-blue-100 flex items-center justify-center">
+                            <Briefcase className="w-5 h-5 text-blue-600" />
+                          </div>
+
+                          <div>
+                            <p className="text-xs text-slate-500">
+                              Selected Role
+                            </p>
+
+                            <h3 className="font-semibold text-slate-800">
+                              {roles.find((r) => r._id === selectedRole)
+                                ?.displayName ||
+                                roles.find((r) => r._id === selectedRole)?.name}
+                            </h3>
+                          </div>
                         </div>
 
-                        <div>
-                          <p className="text-xs text-slate-500">
-                            Selected Role
-                          </p>
+                        <div className="mt-4 flex items-center justify-between rounded-xl bg-white p-3 border">
+                          <span className="text-sm text-slate-500">
+                            {selectedMembers.length > 0
+                              ? "Selected Users"
+                              : "All Users in Role"}
+                          </span>
 
-                          <h3 className="font-semibold text-slate-800">
-                            {roles.find((r) => r._id === selectedRole)
-                              ?.displayName ||
-                              roles.find((r) => r._id === selectedRole)?.name}
-                          </h3>
+                          <span className="font-semibold text-blue-600">
+                            {assignedUsers.length}
+                          </span>
                         </div>
                       </div>
 
-                      <div className="mt-4 flex items-center justify-between rounded-xl bg-white p-3 border">
-                        <span className="text-sm text-slate-500">
-                          Total Users
-                        </span>
-
-                        <span className="font-semibold text-blue-600">
-                          {assignedUsers.length}
-                        </span>
-                      </div>
+                      {selectedMembers.length > 0 && (
+                        <div className="space-y-2 max-h-[200px] overflow-auto pr-1">
+                          {assignedUsers.map((u) => (
+                            <div
+                              key={u._id}
+                              className="flex items-center justify-between rounded-2xl border bg-white px-4 py-2.5"
+                            >
+                              <div className="flex items-center gap-3">
+                                <div className="h-9 w-9 rounded-xl bg-indigo-100 flex items-center justify-center font-semibold text-indigo-600 text-xs">
+                                  {u?.name?.charAt(0)}
+                                </div>
+                                <div>
+                                  <p className="font-medium text-slate-800 text-sm">
+                                    {u.name}
+                                  </p>
+                                  <p className="text-[11px] text-slate-500">
+                                    {u?.employeeCode || u?.role?.name}
+                                  </p>
+                                </div>
+                              </div>
+                              <CheckCircle2 className="w-4 h-4 text-green-500" />
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="rounded-2xl border border-dashed p-8 text-center text-slate-400">

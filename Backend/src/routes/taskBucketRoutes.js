@@ -12,6 +12,7 @@ import {
   completeTaskBucket,
   getAllTaskBuckets,
   updateTaskBucket,
+  exportTaskBucketsFiltered,
 } from "../controllers/taskBucketController.js";
 
 import { authenticateJWT } from "../middleware/authMiddleware.js";
@@ -22,8 +23,18 @@ import {
   exportTaskBuckets,
   importTaskBuckets,
 } from "../services/imports/importBucket.js";
-import { getEmployeeAgingBucketList, getEmployeeWiseAgingBucketCounts, getTaskBucketAgingMaster, upsertTaskBucketAgingMaster } from "../controllers/taskBucketAgingController.js";
+import {
+  getEmployeeAgingBucketList,
+  getEmployeeWiseAgingBucketCounts,
+  getTaskBucketAgingMaster,
+  upsertTaskBucketAgingMaster,
+} from "../controllers/taskBucketAgingController.js";
+
 const router = express.Router();
+
+// =========================================================
+// 1. STATIC ROUTES (MUST BE ABOVE ALL "/:id" ROUTES)
+// =========================================================
 router.post(
   "/import",
   authenticateJWT,
@@ -32,20 +43,33 @@ router.post(
 );
 router.get("/downloadTemp", authenticateJWT, downloadBucketImportTemplate);
 
+router.get("/list", authenticateJWT, getAllTaskBuckets);
+router.get("/export-bucket", authenticateJWT, exportTaskBucketsFiltered);
+router.get("/bucket/export", authenticateJWT, exportTaskBuckets);
+router.get("/bucket/export-pending", authenticateJWT, exportPendingTaskBuckets);
+
+// Aging Master & Reports
+router.get("/aging/master", getTaskBucketAgingMaster);
+router.put("/aging/master", upsertTaskBucketAgingMaster);
+router.get("/aging/employee-counts", getEmployeeWiseAgingBucketCounts);
+router.get("/aging/employee/:employeeCode/list", getEmployeeAgingBucketList);
+
+// =========================================================
+// 2. ROOT ROUTES ("/")
+// =========================================================
 router.post(
   "/",
   authenticateJWT,
   upload.array("attachmentFile"),
   createTaskBucket,
 );
-
 router.get("/", authenticateJWT, getTaskBuckets);
-router.get("/list", authenticateJWT, getAllTaskBuckets);
 
+// =========================================================
+// 3. DYNAMIC ":id" ROUTES (ALWAYS AT THE BOTTOM)
+// =========================================================
 router.get("/:id", authenticateJWT, getSingleTaskBucket);
-
 router.post("/:id/distribute", authenticateJWT, distributeTaskBucket);
-
 router.delete("/:id", authenticateJWT, deleteTaskBucket);
 router.put(
   "/:id",
@@ -55,22 +79,5 @@ router.put(
 );
 router.patch("/:id/complete", authenticateJWT, completeTaskBucket);
 router.get("/:id/reporting-users", authenticateJWT, getBucketReportingUsers);
-router.get("/bucket/export", authenticateJWT, exportTaskBuckets);
-router.get("/bucket/export-pending", authenticateJWT, exportPendingTaskBuckets);
 
-// Master GET & SET (pendingDaysThreshold)
-router.get("/aging/master", getTaskBucketAgingMaster);
-router.put("/aging/master", upsertTaskBucketAgingMaster);
-
-// API 1: All Employees Pending Aging Bucket Counts (No employeeCode param)
-router.get(
-  "/aging/employee-counts",
-  getEmployeeWiseAgingBucketCounts,
-);
-
-// API 2: Specific Employee Pending Aging Buckets List (By employeeCode param)
-router.get(
-  "/aging/employee/:employeeCode/list",
-  getEmployeeAgingBucketList,
-);
 export default router;

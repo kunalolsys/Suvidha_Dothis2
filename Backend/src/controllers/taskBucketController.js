@@ -24,7 +24,8 @@ import {
 import Role from "../models/Role.js";
 import { sendNotificationAlert } from "../utils/notificationHelper.js";
 import { handleAsync } from "../utils/handleAsync.js";
-
+import * as XLSX from "xlsx";
+import moment from "moment-timezone";
 // =======================================================
 // CREATE BUCKET TASK
 // =======================================================
@@ -62,15 +63,12 @@ export const createTaskBucket = async (req, res) => {
     // =====================================================
     // BOOLEAN FIX
     // =====================================================
-
     const dependentEnabled = String(isDependent) === "true";
-
     const recurrentEnabled = String(isRecurrent) === "true";
 
     // =====================================================
     // BASIC VALIDATION
     // =====================================================
-
     if (!title?.trim()) {
       return res.status(400).json({
         success: false,
@@ -93,9 +91,21 @@ export const createTaskBucket = async (req, res) => {
     }
 
     // =====================================================
-    // ROLE MODE
+    // PARSE TARGET USERS (WORKS FOR BOTH "Users" AND "Role")
     // =====================================================
+    let parsedUsers = [];
+    if (targetUsers) {
+      parsedUsers =
+        typeof targetUsers === "string" ? JSON.parse(targetUsers) : targetUsers;
+      if (!Array.isArray(parsedUsers)) {
+        parsedUsers = [];
+      }
+      parsedUsers = parsedUsers.filter(Boolean);
+    }
 
+    // =====================================================
+    // ROLE MODE VALIDATION
+    // =====================================================
     if (assignmentMode === "Role" && !targetRole) {
       return res.status(400).json({
         success: false,
@@ -104,28 +114,18 @@ export const createTaskBucket = async (req, res) => {
     }
 
     // =====================================================
-    // MEMBER MODE
+    // MEMBER MODE VALIDATION
     // =====================================================
-
-    let parsedUsers = [];
-
-    if (assignmentMode === "Users") {
-      parsedUsers =
-        typeof targetUsers === "string" ? JSON.parse(targetUsers) : targetUsers;
-
-      if (!Array.isArray(parsedUsers) || parsedUsers.length === 0) {
-        return res.status(400).json({
-          success: false,
-          message: "Please select users",
-        });
-      }
+    if (assignmentMode === "Users" && parsedUsers.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Please select users",
+      });
     }
 
     // =====================================================
-    // SIMPLE TASK VALIDATION
-    // only when NOT dependent
+    // SIMPLE TASK VALIDATION (only when NOT dependent)
     // =====================================================
-
     if (!dependentEnabled) {
       if (!startDate) {
         return res.status(400).json({
@@ -134,7 +134,6 @@ export const createTaskBucket = async (req, res) => {
         });
       }
 
-      // only normal task
       if (!recurrentEnabled && !taskEndDays) {
         return res.status(400).json({
           success: false,
@@ -146,7 +145,6 @@ export const createTaskBucket = async (req, res) => {
     // =====================================================
     // DEPENDENCY VALIDATION
     // =====================================================
-
     if (dependentEnabled) {
       if (!taskDependent) {
         return res.status(400).json({
@@ -180,7 +178,6 @@ export const createTaskBucket = async (req, res) => {
     // =====================================================
     // RECURRING VALIDATION
     // =====================================================
-
     if (recurrentEnabled) {
       if (!frequency) {
         return res.status(400).json({
@@ -203,9 +200,7 @@ export const createTaskBucket = async (req, res) => {
     // =====================================================
     // FILES
     // =====================================================
-
     let uploadedFiles = [];
-
     if (req.files?.length > 0) {
       uploadedFiles = req.files.map(
         (file) => `${req.uploadFolder}/${file.filename}`,
@@ -213,43 +208,42 @@ export const createTaskBucket = async (req, res) => {
     }
 
     // =====================================================
-    // CREATE BUCKET
-    // =====================================================
-    // =====================================================
     // TARGET USER DISTRIBUTION INIT
     // =====================================================
-
     let distributionUsers = [];
-
     let assignedUsers = [];
 
-    // =====================================================
-    // USER BASED
-    // =====================================================
-
     if (assignmentMode === "Users") {
+      assignedUsers = parsedUsers;
       distributionUsers = parsedUsers.map((u) => ({
         user: u,
         status: "Pending",
         distributedAt: null,
       }));
-
-      assignedUsers = parsedUsers;
     }
 
-    // =====================================================
-    // ROLE BASED
-    // =====================================================
-
     if (assignmentMode === "Role") {
-      const roleUsers = await User.find({
-        role: targetRole,
-      }).select("_id");
+      if (parsedUsers.length > 0) {
+        // ✅ Agar Role ke saath specific targetUsers bheje gaye hain, to SIRF unhi ko assign karein
+        const selectedRoleUsers = await User.find({
+          _id: { $in: parsedUsers },
+          role: targetRole,
+          isDeleted: { $ne: true },
+        }).select("_id");
 
-      assignedUsers = roleUsers.map((u) => u._id);
+        assignedUsers = selectedRoleUsers.map((u) => u._id);
+      } else {
+        // Fallback: Agar koi specific user select nahi kiya, to role ke saare active users
+        const allRoleUsers = await User.find({
+          role: targetRole,
+          isDeleted: { $ne: true },
+        }).select("_id");
 
-      distributionUsers = roleUsers.map((u) => ({
-        user: u._id,
+        assignedUsers = allRoleUsers.map((u) => u._id);
+      }
+
+      distributionUsers = assignedUsers.map((uId) => ({
+        user: uId,
         status: "Pending",
         distributedAt: null,
       }));
@@ -258,52 +252,30 @@ export const createTaskBucket = async (req, res) => {
     // =====================================================
     // CREATE BUCKET
     // =====================================================
-
     const bucket = await TaskBucket.create({
       title: title.trim(),
-
       description: description.trim(),
-
       createdBy: req.cookies.userId || req.user._id,
 
       assignmentMode,
-
-      // ===================================================
-      // ROLE / MEMBERS
-      // ===================================================
-
       targetRole: assignmentMode === "Role" ? targetRole : null,
-
-      targetUsers: assignmentMode === "Users" ? parsedUsers : [],
-
+      targetUsers: assignedUsers,
       assignedTargetUsers: assignedUsers,
       targetUserDistribution: distributionUsers,
 
-      // ===================================================
       // TASK DETAILS
-      // ===================================================
-
       startDate: !dependentEnabled && startDate ? startDate : null,
-
       taskEndDays:
         !recurrentEnabled && taskEndDays ? Number(taskEndDays) : null,
-
       checklist: checklist ? JSON.parse(checklist) : [],
 
-      // ===================================================
       // DEPENDENCY
-      // ===================================================
-
       isDependent: dependentEnabled,
-
       dependencyConfig: dependentEnabled
         ? {
             taskDependent,
-
             startTimeSetting,
-
             isDependentFrequency,
-
             xValue: Number(xValue),
           }
         : {
@@ -313,28 +285,19 @@ export const createTaskBucket = async (req, res) => {
             xValue: null,
           },
 
-      // ===================================================
       // RECURRENCE
-      // ===================================================
-
       isRecurrent: recurrentEnabled,
-
       frequency: recurrentEnabled ? frequency : null,
-
       weekDays: recurrentEnabled && weekDays ? JSON.parse(weekDays) : [],
-
       endDate: recurrentEnabled && endDate ? endDate : null,
 
-      // ===================================================
       // FILES
-      // ===================================================
-
       attachmentFile: uploadedFiles,
     });
+
     // =====================================================
     // POPULATE USERS
     // =====================================================
-
     await bucket.populate([
       {
         path: "createdBy",
@@ -345,88 +308,50 @@ export const createTaskBucket = async (req, res) => {
         select: "name email",
       },
       {
+        path: "assignedTargetUsers",
+        select: "name email",
+      },
+      {
         path: "targetRole",
         select: "name",
       },
     ]);
 
     // =====================================================
-    // FINAL TARGET USERS
+    // FINAL TARGET USERS FOR NOTIFICATIONS & EMAIL
     // =====================================================
-
-    let finalUsers = [];
-
-    if (assignmentMode === "Users") {
-      finalUsers = bucket.targetUsers || [];
-    }
-
-    if (assignmentMode === "Role") {
-      finalUsers = await User.find({
-        role: targetRole,
-      }).select("_id name email");
-    }
+    const finalUsers = bucket.assignedTargetUsers || [];
 
     // =====================================================
-    // SOCKET IO
+    // SOCKET IO & NOTIFICATIONS
     // =====================================================
-
     const io = getIO();
 
-    // =====================================================
-    // SEND NOTIFICATION + EMAIL
-    // =====================================================
-
     for (const user of finalUsers) {
-      // ===================================================
-      // REALTIME NOTIFICATION
-      // ===================================================
-
       io.to(String(user._id)).emit("notification", {
         type: "TASK_BUCKET_CREATED",
-
         title: "New Task Bucket Assigned",
-
         description: `A new task bucket "${bucket.title}" has been assigned to you.`,
-
         bucketId: bucket._id,
       });
 
-      // ===================================================
-      // DATABASE NOTIFICATION
-      // ===================================================
-
       await Notifications.create({
         user: user._id,
-
         fromUser: req.cookies.userId || req.user._id,
-
         type: "BUCKET_TASK_ASSIGNED",
-
         title: "New Task Bucket Assigned",
-
         description: `A new task bucket "${bucket.title}" has been assigned to you.`,
-
         relatedId: bucket._id,
       });
-
-      // ===================================================
-      // EMAIL
-      // ===================================================
 
       if (user?.email) {
         const frontendUrl = `${process.env.BASE_URL}/bucket/my-bucket`;
 
         const emailTemplate = taskBucketAssignedTemplate({
           userName: user.name,
-
           bucketId: bucket.bucketId,
-
           bucketTitle: bucket.title,
-
           description: bucket.description,
-
-          // assignmentMode: bucket.assignmentMode,
-
           createdAt: bucket.createdAt
             ? new Date(bucket.createdAt).toLocaleDateString("en-IN", {
                 day: "2-digit",
@@ -434,20 +359,17 @@ export const createTaskBucket = async (req, res) => {
                 year: "numeric",
               })
             : "-",
-
           createdBy: req.user?.name || "Manager",
-
           frontendUrl,
         });
 
         sendEmail({
           to: user.email,
-
           subject: emailTemplate.subject,
-
           html: emailTemplate.html,
         });
       }
+
       sendNotification({
         type: "TASK_BUCKET_ASSIGNED",
         task: bucket,
@@ -470,11 +392,9 @@ export const createTaskBucket = async (req, res) => {
     });
   }
 };
-
-// =======================================================
-// GET ALL BUCKETS
-// =======================================================
-
+// =========================================================================
+// 1. GET TASK BUCKETS (4 TABS + GENERATED TASK COMPLETION CHECK + SAFE SEARCH)
+// =========================================================================
 export const getTaskBuckets = async (req, res) => {
   try {
     const userId = req.cookies.userId || req.user._id;
@@ -519,39 +439,55 @@ export const getTaskBuckets = async (req, res) => {
     const normalizedStatus = status.toLowerCase();
 
     const visibilityOr = [
+      // 1. User-based buckets: Sirf unhe jinhe assign hai
       {
         assignmentMode: "Users",
-        targetUserDistribution: {
-          $elemMatch: {
-            user: userId,
-            status: "Pending",
+        $or: [
+          { targetUsers: userId },
+          { assignedTargetUsers: userId },
+          {
+            targetUserDistribution: {
+              $elemMatch: {
+                user: userId,
+                ...(normalizedStatus === "pending"
+                  ? { status: "Pending" }
+                  : {}),
+              },
+            },
           },
-        },
+        ],
       },
+      // 2. Role-based buckets WITH specific targetUsers:
+      // Sirf unhi selected users ko dikhe
       {
         assignmentMode: "Role",
         targetRole: currentUser?.role,
+        "targetUsers.0": { $exists: true },
+        $or: [
+          { targetUsers: userId },
+          { assignedTargetUsers: userId },
+          {
+            targetUserDistribution: {
+              $elemMatch: {
+                user: userId,
+                ...(normalizedStatus === "pending"
+                  ? { status: "Pending" }
+                  : {}),
+              },
+            },
+          },
+        ],
+      },
+      // 3. Role-based buckets WITHOUT specific targetUsers (poora role assigned):
+      {
+        assignmentMode: "Role",
+        targetRole: currentUser?.role,
+        "targetUsers.0": { $exists: false },
       },
     ];
 
-    // Distributed / Completed tabs mein already distributed buckets bhi dikhni chahiye
-    if (
-      normalizedStatus === "distributed" ||
-      normalizedStatus === "completed" ||
-      normalizedStatus === "completedbyme" ||
-      normalizedStatus === "completed_by_me" ||
-      normalizedStatus === "all"
-    ) {
-      visibilityOr.push(
-        { targetUsers: userId },
-        { assignedTargetUsers: userId },
-        { createdBy: userId },
-        { completedBy: userId },
-      );
-    }
-
     const filter = {
-      isDeleted: false,
+      isDeleted: { $ne: true },
       $or: visibilityOr,
     };
 
@@ -559,14 +495,9 @@ export const getTaskBuckets = async (req, res) => {
     // SEARCH FILTER (Title, Description & Bucket ID - Long Text Safe)
     // =====================================================
     if (search) {
-      // Extra spaces aur newlines ko single space mein normalize karein
       const normalizedSearch = search.replace(/\s+/g, " ").trim();
-
-      // Pehle 120 characters ka safe regex banayein (taaki 500+ char paste par regex fail na ho)
       const safeSnippet = normalizedSearch.slice(0, 120);
       const escapedSearch = safeSnippet.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-      // Agar multiple spaces ho DB mein to flexible whitespace regex banayein
       const flexiblePattern = escapedSearch.replace(/\s+/g, "\\s+");
 
       filter.$and = [
@@ -697,6 +628,13 @@ export const getTaskBuckets = async (req, res) => {
       };
     });
 
+    // Distributed tab se un buckets ko hatayein jinke saare generated tasks complete ho chuke hain
+    if (normalizedStatus === "distributed") {
+      enrichedBuckets = enrichedBuckets.filter(
+        (b) => !b.isGeneratedTaskCompleted,
+      );
+    }
+
     // Agar status === "Completed" bheja hai, to sirf wahi buckets return karein jinke generated tasks complete ho chuke hain
     if (normalizedStatus === "completed") {
       enrichedBuckets = enrichedBuckets.filter(
@@ -715,6 +653,291 @@ export const getTaskBuckets = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to fetch task buckets",
+    });
+  }
+};
+
+// =========================================================================
+// 2. EXPORT TASK BUCKETS (FILTER-WISE OR ALL) USING `xlsx`
+// GET /api/v1/task-buckets/export?status=Pending|Distributed|Completed|CompletedByMe|all&search=...
+// =========================================================================
+export const exportTaskBucketsFiltered = async (req, res) => {
+  try {
+    const userId = req.cookies.userId || req.user._id;
+    const currentUser = await User.findById(userId).select("role");
+
+    const search = req.query.search?.trim() || "";
+    const status = req.query.status?.trim() || "all";
+    const normalizedStatus = status.toLowerCase();
+
+    const visibilityOr = [
+      // 1. User-based buckets: Sirf unhe jinhe assign hai
+      {
+        assignmentMode: "Users",
+        $or: [
+          { targetUsers: userId },
+          { assignedTargetUsers: userId },
+          {
+            targetUserDistribution: {
+              $elemMatch: {
+                user: userId,
+                ...(normalizedStatus === "pending"
+                  ? { status: "Pending" }
+                  : {}),
+              },
+            },
+          },
+        ],
+      },
+      // 2. Role-based buckets WITH specific targetUsers:
+      // Sirf unhi selected users ko dikhe
+      {
+        assignmentMode: "Role",
+        targetRole: currentUser?.role,
+        "targetUsers.0": { $exists: true },
+        $or: [
+          { targetUsers: userId },
+          { assignedTargetUsers: userId },
+          {
+            targetUserDistribution: {
+              $elemMatch: {
+                user: userId,
+                ...(normalizedStatus === "pending"
+                  ? { status: "Pending" }
+                  : {}),
+              },
+            },
+          },
+        ],
+      },
+      // 3. Role-based buckets WITHOUT specific targetUsers (poora role assigned):
+      {
+        assignmentMode: "Role",
+        targetRole: currentUser?.role,
+        "targetUsers.0": { $exists: false },
+      },
+    ];
+
+    const filter = {
+      isDeleted: { $ne: true },
+      $or: visibilityOr,
+    };
+
+    // =====================================================
+    // SEARCH FILTER (Title, Description & Bucket ID - Long Text Safe)
+    // =====================================================
+    if (search) {
+      const normalizedSearch = search.replace(/\s+/g, " ").trim();
+      const safeSnippet = normalizedSearch.slice(0, 120);
+      const escapedSearch = safeSnippet.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const flexiblePattern = escapedSearch.replace(/\s+/g, "\\s+");
+
+      filter.$and = [
+        {
+          $or: [
+            { title: { $regex: flexiblePattern, $options: "i" } },
+            { description: { $regex: flexiblePattern, $options: "i" } },
+            { bucketId: { $regex: flexiblePattern, $options: "i" } },
+          ],
+        },
+      ];
+    }
+
+    // =====================================================
+    // STATUS FILTER
+    // =====================================================
+    if (status && normalizedStatus !== "all") {
+      if (!filter.$and) filter.$and = [];
+
+      if (
+        normalizedStatus === "distributed" ||
+        normalizedStatus === "completed"
+      ) {
+        filter.$and.push({
+          status: { $ne: "Completed" },
+          distributionStatus: {
+            $in: ["Distributed", "Partially Distributed"],
+          },
+        });
+      } else if (
+        normalizedStatus === "completedbyme" ||
+        normalizedStatus === "completed_by_me"
+      ) {
+        filter.$and.push({
+          status: "Completed",
+          completedBy: userId,
+        });
+      } else if (normalizedStatus === "pending") {
+        filter.$and.push({
+          status: "Pending",
+          distributionStatus: "Pending",
+        });
+      } else {
+        filter.$and.push({ status });
+      }
+    }
+
+    // =====================================================
+    // FETCH BUCKETS
+    // =====================================================
+    const buckets = await TaskBucket.find(filter)
+      .populate("targetRole", "name displayName")
+      .populate("targetUsers", "name email employeeCode")
+      .populate("assignedTargetUsers", "name email employeeCode")
+      .populate("createdBy", "name email")
+      .populate("completedBy", "name email")
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // =====================================================
+    // ENRICH GENERATED TASKS COMPLETION STATUS
+    // =====================================================
+    const bucketIds = buckets.map((b) => b._id);
+    const [delegationTasks, recurringTasks] = bucketIds.length
+      ? await Promise.all([
+          DelegationTask.find({
+            bucketId: { $in: bucketIds },
+            isDeleted: { $ne: true },
+          })
+            .select("bucketId status")
+            .lean(),
+          RecurringTask.find({
+            bucketId: { $in: bucketIds },
+            isDeleted: { $ne: true },
+          })
+            .select("bucketId status")
+            .lean(),
+        ])
+      : [[], []];
+
+    const tasksByBucket = new Map();
+    for (const t of [...delegationTasks, ...recurringTasks]) {
+      const id = String(t.bucketId);
+      if (!tasksByBucket.has(id)) tasksByBucket.set(id, []);
+      tasksByBucket.get(id).push(t);
+    }
+
+    let finalBuckets = buckets.map((b) => {
+      const related = tasksByBucket.get(String(b._id)) || [];
+      const total = related.length;
+      const completed = related.filter((t) => t.status === "Completed").length;
+      const isGeneratedTaskCompleted = total > 0 && completed === total;
+
+      return {
+        ...b,
+        isGeneratedTaskCompleted,
+        taskProgress: total > 0 ? `${completed}/${total}` : "0/0",
+      };
+    });
+
+    if (normalizedStatus === "distributed") {
+      finalBuckets = finalBuckets.filter((b) => !b.isGeneratedTaskCompleted);
+    }
+
+    if (normalizedStatus === "completed") {
+      finalBuckets = finalBuckets.filter((b) => b.isGeneratedTaskCompleted);
+    }
+
+    // =====================================================
+    // BUILD EXCEL WORKSHEET
+    // =====================================================
+    const rows = finalBuckets.map((b) => {
+      const assignedList =
+        Array.isArray(b.assignedTargetUsers) && b.assignedTargetUsers.length > 0
+          ? b.assignedTargetUsers
+              .map(
+                (u) =>
+                  `${u.name}${u.employeeCode ? ` (${u.employeeCode})` : ""}`,
+              )
+              .join(", ")
+          : Array.isArray(b.targetUsers) && b.targetUsers.length > 0
+            ? b.targetUsers.map((u) => u.name).join(", ")
+            : b.targetRole?.displayName || b.targetRole?.name || "-";
+
+      return {
+        "Bucket ID": b.bucketId || "-",
+        Title: b.title || "-",
+        Description: b.description || "-",
+        "Bucket Status": b.status || "-",
+        "Distribution Status": b.distributionStatus || "Pending",
+        "Assigned Employee(s)": assignedList,
+        "End Days": b.taskEndDays ?? "-",
+        Recurrent: b.isRecurrent ? "Yes" : "No",
+        Frequency: b.frequency || "-",
+        "Tasks Progress": b.taskProgress,
+        "Start Date": b.startDate
+          ? moment(b.startDate).tz("Asia/Kolkata").format("DD MMM YYYY")
+          : "-",
+        "Created By": b.createdBy?.name || "-",
+        "Created At": b.createdAt
+          ? moment(b.createdAt).tz("Asia/Kolkata").format("DD MMM YYYY hh:mm A")
+          : "-",
+        "Completed By": b.completedBy?.name || "-",
+        Remark: b.remark || "-",
+      };
+    });
+
+    const worksheet =
+      rows.length > 0
+        ? XLSX.utils.json_to_sheet(rows)
+        : XLSX.utils.aoa_to_sheet([
+            [
+              "Bucket ID",
+              "Title",
+              "Description",
+              "Bucket Status",
+              "Distribution Status",
+              "Assigned Employee(s)",
+              "End Days",
+              "Recurrent",
+              "Frequency",
+              "Tasks Progress",
+              "Start Date",
+              "Created By",
+              "Created At",
+              "Completed By",
+              "Remark",
+            ],
+          ]);
+
+    worksheet["!cols"] = [
+      { wch: 16 },
+      { wch: 28 },
+      { wch: 42 },
+      { wch: 16 },
+      { wch: 22 },
+      { wch: 28 },
+      { wch: 12 },
+      { wch: 12 },
+      { wch: 15 },
+      { wch: 16 },
+      { wch: 18 },
+      { wch: 22 },
+      { wch: 22 },
+      { wch: 22 },
+      { wch: 28 },
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Task Buckets");
+
+    const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+
+    const fileLabel = normalizedStatus === "all" ? "All" : status;
+    const fileName = `Task_Buckets_${fileLabel}_${moment().format("YYYYMMDD_HHmm")}.xlsx`;
+
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+    res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+
+    return res.status(200).send(buffer);
+  } catch (err) {
+    console.error("Export Task Buckets Error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to export task buckets",
     });
   }
 };

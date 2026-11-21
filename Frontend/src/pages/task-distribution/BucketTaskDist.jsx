@@ -28,9 +28,21 @@ import {
   Loader2,
   Lock,
   Award,
+  Download,
+  FileSpreadsheet,
+  ChevronDown,
 } from "lucide-react";
 
-import { Checkbox, Empty, Input, InputNumber, Modal, Tag, Tooltip } from "antd";
+import {
+  Checkbox,
+  Dropdown,
+  Empty,
+  Input,
+  InputNumber,
+  Modal,
+  Tag,
+  Tooltip,
+} from "antd";
 import api from "../../lib/api.js";
 import dayjs from "dayjs";
 import { useDebounce } from "../../lib/debounce.js";
@@ -74,6 +86,8 @@ const TaskDistribution = () => {
   const [loadingEmployees, setLoadingEmployees] = useState(false);
 
   const [loading, setLoading] = useState(false);
+  const [loadingBuckets, setLoadingBuckets] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const { permissions, isSuper } = useSelector((state) => state.permissions);
   const { canUpdate } = getSubmodulePermissions(
@@ -81,7 +95,7 @@ const TaskDistribution = () => {
     "my_bucket",
     isSuper,
   );
-  const [loadingBuckets, setLoadingBuckets] = useState(false);
+
   // =========================================================
   // 1. FETCH BUCKETS BY TAB (Pending / Distributed / Completed / CompletedByMe)
   // =========================================================
@@ -103,12 +117,63 @@ const TaskDistribution = () => {
       setLoadingBuckets(false);
     }
   };
+
   useEffect(() => {
     fetchBuckets();
   }, [debouncedBucketSearch, activeTab]);
 
   // =========================================================
-  // 2. FETCH ACTIVE EMPLOYEES
+  // 2. EXPORT BUCKETS (CURRENT FILTER OR ALL RECORDS)
+  // =========================================================
+  const handleExportBuckets = async (exportType = "current") => {
+    setExporting(true);
+    try {
+      const statusParam = exportType === "all" ? "all" : activeTab;
+
+      const res = await api.get("/task-buckets/export-bucket", {
+        params: {
+          status: statusParam,
+          search:
+            exportType === "all"
+              ? undefined
+              : debouncedBucketSearch || undefined,
+        },
+        responseType: "blob",
+      });
+
+      const blob = new Blob([res.data], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+
+      const label =
+        exportType === "all" ? "All" : activeTabLabel.replace(/\s+/g, "_");
+      link.setAttribute(
+        "download",
+        `Task_Buckets_${label}_${dayjs().format("YYYY-MM-DD")}.xlsx`,
+      );
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+
+      toast.success(
+        exportType === "all"
+          ? "All task buckets exported successfully!"
+          : `${activeTabLabel} task buckets exported successfully!`,
+      );
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to export task buckets");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  // =========================================================
+  // 3. FETCH ACTIVE EMPLOYEES
   // =========================================================
   const fetchEmployees = async () => {
     setLoadingEmployees(true);
@@ -137,7 +202,7 @@ const TaskDistribution = () => {
   }, []);
 
   // =========================================================
-  // 3. SINGLE MATCHED EMPLOYEE ON SEARCH
+  // 4. SINGLE MATCHED EMPLOYEE ON SEARCH
   // =========================================================
   const matchedEmployee = useMemo(() => {
     const q = employeeQuery.trim().toLowerCase();
@@ -177,7 +242,7 @@ const TaskDistribution = () => {
   }, [matchedEmployee]);
 
   // =========================================================
-  // 4. HELPER: CHECK BUCKET DISTRIBUTION & TASK COMPLETION
+  // 5. HELPER: CHECK BUCKET DISTRIBUTION & TASK COMPLETION
   // =========================================================
   const isBucketDistributed = (bucket) => {
     return (
@@ -197,7 +262,7 @@ const TaskDistribution = () => {
   const displayedBuckets = buckets;
 
   // =========================================================
-  // 5. LIVE UPDATE BUCKET (PUT /task-buckets/:id)
+  // 6. LIVE UPDATE BUCKET (PUT /task-buckets/:id)
   // =========================================================
   const persistBucketChanges = async (bucket, overrides = {}) => {
     if (
@@ -352,7 +417,7 @@ const TaskDistribution = () => {
   };
 
   // =========================================================
-  // 6. SELECTION & INLINE EDIT HANDLERS
+  // 7. SELECTION & INLINE EDIT HANDLERS
   // =========================================================
   const toggleBucketSelection = (bucket, checked) => {
     if (bucket.status === "Completed" || isBucketDistributed(bucket)) return;
@@ -469,7 +534,7 @@ const TaskDistribution = () => {
   const selectedBucketIds = Object.keys(selectedBucketsMap);
 
   // =========================================================
-  // 7. DISTRIBUTE SELECTED BUCKETS (LOCKS BUCKET AS DISTRIBUTED)
+  // 8. DISTRIBUTE SELECTED BUCKETS (LOCKS BUCKET AS DISTRIBUTED)
   // =========================================================
   const handleDistribute = async () => {
     if (selectedBucketIds.length === 0) {
@@ -520,7 +585,7 @@ const TaskDistribution = () => {
   };
 
   // =========================================================
-  // 8. MARK DISTRIBUTED BUCKET AS COMPLETED
+  // 9. MARK DISTRIBUTED BUCKET AS COMPLETED
   // =========================================================
   const handleConfirmCompleteBucket = async () => {
     if (!completeModalBucket?._id) return;
@@ -642,7 +707,7 @@ const TaskDistribution = () => {
                     </div>
                   </div>
 
-                  {/* PENDING / DISTRIBUTED / COMPLETED / COMPLETED BY ME SEGMENTED TABS */}
+                  {/* PENDING / DISTRIBUTED / COMPLETED BY USER / COMPLETED BY ME SEGMENTED TABS */}
                   <div className="bg-slate-100 p-1 rounded-xl border border-slate-200/80 flex flex-wrap items-center gap-1">
                     {BUCKET_TABS.map((tab) => {
                       const active = activeTab === tab.key;
@@ -667,31 +732,92 @@ const TaskDistribution = () => {
                   </div>
                 </div>
 
-                {/* Search + Select All */}
+                {/* Search + Select All + Export Dropdown */}
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
                   <Input
                     allowClear
                     prefix={<Search className="w-4 h-4 text-slate-400" />}
-                    placeholder="Search buckets by title or ID..."
+                    placeholder="Search buckets by title, description or ID..."
                     value={bucketSearch}
                     onChange={(e) => setBucketSearch(e.target.value)}
                     className="rounded-xl h-9"
                   />
 
-                  {activeTab === "Pending" && selectableBuckets.length > 0 && (
-                    <div className="flex items-center gap-2 shrink-0 px-3.5 h-9 bg-indigo-50/70 border border-indigo-100 rounded-xl">
-                      <Checkbox
-                        checked={isAllSelected}
-                        onChange={(e) =>
-                          handleSelectAllBuckets(e.target.checked)
-                        }
+                  <div className="flex items-center gap-2 shrink-0">
+                    {activeTab === "Pending" && selectableBuckets.length > 0 && (
+                      <div className="flex items-center gap-2 px-3.5 h-9 bg-indigo-50/70 border border-indigo-100 rounded-xl">
+                        <Checkbox
+                          checked={isAllSelected}
+                          onChange={(e) =>
+                            handleSelectAllBuckets(e.target.checked)
+                          }
+                        >
+                          <span className="text-xs font-semibold text-indigo-800">
+                            Select All ({selectableBuckets.length})
+                          </span>
+                        </Checkbox>
+                      </div>
+                    )}
+
+                    {/* EXPORT FILTER-WISE OR ALL DROPDOWN */}
+                    <Dropdown
+                      trigger={["click"]}
+                      disabled={exporting}
+                      menu={{
+                        items: [
+                          {
+                            key: "current",
+                            icon: (
+                              <FileSpreadsheet className="w-4 h-4 text-indigo-600" />
+                            ),
+                            label: (
+                              <div className="py-0.5">
+                                <div className="text-xs font-semibold text-slate-800">
+                                  Export {activeTabLabel} Only
+                                </div>
+                                <div className="text-[10px] text-slate-400">
+                                  Current tab &amp; active search filter
+                                </div>
+                              </div>
+                            ),
+                            onClick: () => handleExportBuckets("current"),
+                          },
+                          { type: "divider" },
+                          {
+                            key: "all",
+                            icon: (
+                              <Download className="w-4 h-4 text-emerald-600" />
+                            ),
+                            label: (
+                              <div className="py-0.5">
+                                <div className="text-xs font-semibold text-slate-800">
+                                  Export All Buckets
+                                </div>
+                                <div className="text-[10px] text-slate-400">
+                                  Download complete record across all tabs
+                                </div>
+                              </div>
+                            ),
+                            onClick: () => handleExportBuckets("all"),
+                          },
+                        ],
+                      }}
+                    >
+                      <button
+                        type="button"
+                        disabled={exporting}
+                        className="inline-flex items-center gap-1.5 px-3.5 h-9 rounded-xl bg-white hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 border border-slate-200 hover:border-indigo-300 text-xs font-semibold shadow-2xs transition-all disabled:opacity-50"
                       >
-                        <span className="text-xs font-semibold text-indigo-800">
-                          Select All ({selectableBuckets.length})
-                        </span>
-                      </Checkbox>
-                    </div>
-                  )}
+                        {exporting ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600" />
+                        ) : (
+                          <Download className="w-3.5 h-3.5 text-indigo-600" />
+                        )}
+                        <span>{exporting ? "Exporting..." : "Export"}</span>
+                        <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+                      </button>
+                    </Dropdown>
+                  </div>
                 </div>
 
                 {/* Bulk End Days Quick Toolbar */}
@@ -824,7 +950,7 @@ const TaskDistribution = () => {
                                     {bucket.title}
                                   </h3>
 
-                                  {distributed && !isClosed && (
+                                  {/* {distributed && !isClosed && (
                                     <Tag
                                       color="green"
                                       className="m-0 rounded-md font-semibold"
@@ -832,7 +958,7 @@ const TaskDistribution = () => {
                                       {bucket.distributionStatus ||
                                         "Distributed"}
                                     </Tag>
-                                  )}
+                                  )} */}
 
                                   {bucket.isRecurrent && (
                                     <Tag
@@ -955,16 +1081,9 @@ const TaskDistribution = () => {
                                         {bucket.checklist.length} steps
                                       </span>
                                     )}
-
-                                  {/* <Tag
-                                    color={isClosed ? "green" : "blue"}
-                                    className="m-0 rounded-md text-[10px]"
-                                  >
-                                    {bucket.status}
-                                  </Tag> */}
                                 </div>
 
-                                {/* Generated Tasks List Preview in Completed Tab */}
+                                {/* Generated Tasks List Preview in Completed By User Tab */}
                                 {activeTab === "Completed" &&
                                   Array.isArray(bucket.generatedTasksList) &&
                                   bucket.generatedTasksList.length > 0 && (

@@ -492,10 +492,13 @@ export default function BucketListingPage() {
               </TableHead>
               <TableHead className="text-xs font-medium text-slate-500 uppercase tracking-wide">
                 Distribution Status
-              </TableHead>{" "}
+              </TableHead>
               <TableHead className="text-xs font-medium text-slate-500 uppercase tracking-wide">
-                Bucket Status
-              </TableHead>{" "}
+                Task Status
+              </TableHead>
+              <TableHead className="text-xs font-medium text-slate-500 uppercase tracking-wide">
+                Final Status
+              </TableHead>
               {(canUpdate || canDelete) && (
                 <TableHead className="text-xs font-medium text-slate-500 uppercase tracking-wide">
                   Action
@@ -677,43 +680,102 @@ export default function BucketListingPage() {
                         )}
                       </div>
                     </TableCell>
-                    {/* STATUS */}
+                    {/* 1. DISTRIBUTION STATUS */}
                     <TableCell>
-                      <div
-                        className="inline-flex items-center gap-2 px-2.5 py-1 rounded-lg border text-[11px] font-medium"
-                        style={{
-                          color:
-                            bucket.distributionStatus === "Distributed"
-                              ? "#0D9488"
-                              : "#D97706",
+                      {(() => {
+                        const distStatus =
+                          bucket.distributionStatus || "Pending";
+                        const isDist = distStatus === "Distributed";
+                        const isPartial =
+                          distStatus === "Partially Distributed";
 
-                          background:
-                            bucket.distributionStatus === "Distributed"
-                              ? "#F0FDFA"
-                              : "#FFFBEB",
-
-                          borderColor:
-                            bucket.distributionStatus === "Distributed"
-                              ? "#99F6E4"
-                              : "#FDE68A",
-                        }}
-                      >
-                        <span
-                          className="w-2 h-2 rounded-full"
-                          style={{
-                            background:
-                              bucket.distributionStatus === "Distributed"
+                        return (
+                          <div
+                            className="inline-flex items-center gap-2 px-2.5 py-1 rounded-lg border text-[11px] font-medium"
+                            style={{
+                              color: isDist
                                 ? "#0D9488"
-                                : "#D97706",
-                          }}
-                        />
-
-                        {bucket.distributionStatus}
-                      </div>
+                                : isPartial
+                                  ? "#2563EB"
+                                  : "#D97706",
+                              background: isDist
+                                ? "#F0FDFA"
+                                : isPartial
+                                  ? "#EFF6FF"
+                                  : "#FFFBEB",
+                              borderColor: isDist
+                                ? "#99F6E4"
+                                : isPartial
+                                  ? "#BFDBFE"
+                                  : "#FDE68A",
+                            }}
+                          >
+                            <span
+                              className="w-2 h-2 rounded-full"
+                              style={{
+                                background: isDist
+                                  ? "#0D9488"
+                                  : isPartial
+                                    ? "#2563EB"
+                                    : "#D97706",
+                              }}
+                            />
+                            {distStatus}
+                          </div>
+                        );
+                      })()}
                     </TableCell>
+                    {/* 2. TASK STATUS (Derived from generatedTasks) */}
+                    <TableCell>
+                      {(() => {
+                        const tasks = Array.isArray(bucket.generatedTasks)
+                          ? bucket.generatedTasks
+                          : [];
+                        const total = tasks.length;
+                        const completedCount = tasks.filter(
+                          (t) => t.status === "Completed",
+                        ).length;
+
+                        let label = "Not Generated";
+                        let badgeClass =
+                          "bg-slate-100 text-slate-600 border-slate-200";
+                        let dotClass = "bg-slate-400";
+
+                        if (total > 0) {
+                          if (completedCount === total) {
+                            label = `Completed (${completedCount}/${total})`;
+                            badgeClass =
+                              "bg-emerald-50 text-emerald-700 border-emerald-200";
+                            dotClass = "bg-emerald-500";
+                          } else if (completedCount > 0) {
+                            label = `In Progress (${completedCount}/${total})`;
+                            badgeClass =
+                              "bg-blue-50 text-blue-700 border-blue-200";
+                            dotClass = "bg-blue-500";
+                          } else {
+                            label = `Pending (${completedCount}/${total})`;
+                            badgeClass =
+                              "bg-amber-50 text-amber-700 border-amber-200";
+                            dotClass = "bg-amber-500";
+                          }
+                        }
+
+                        return (
+                          <span
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${badgeClass}`}
+                          >
+                            <span
+                              className={`w-1.5 h-1.5 rounded-full ${dotClass}`}
+                            />
+                            {label}
+                          </span>
+                        );
+                      })()}
+                    </TableCell>
+                    {/* 3. FINAL STATUS (Bucket Final Closure Status) */}
                     <TableCell>
                       <span
-                        className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium border ${
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${
                           bucket.status === "Completed"
                             ? "bg-green-50 text-green-700 border-green-200"
                             : "bg-amber-50 text-amber-700 border-amber-200"
