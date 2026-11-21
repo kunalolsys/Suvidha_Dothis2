@@ -9,6 +9,8 @@ import ModuleSetting from "../src/models/ModuleSetting.js";
 import WorkShift from "../src/models/WorkShift.js";
 import Department from "../src/models/Department.js";
 import WorkingWeek from "../src/models/WorkingWeek.js";
+import TaskExtensionMaster from "../src/models/TaskExtensionMaster.js";
+import TaskBucketAgingMaster from "../src/models/TaskBucketAgingMaster.js";
 
 dotenv.config();
 
@@ -89,6 +91,43 @@ async function ensureOpenDepartment() {
   return department;
 }
 
+// 🟢 Seed Default TaskExtensionMaster (Only if not already present)
+async function ensureTaskExtensionMaster(updatedBy = null) {
+  let master = await TaskExtensionMaster.findOne();
+
+  if (!master) {
+    master = await TaskExtensionMaster.create({
+      daysBeforeDueDate: 2,
+      isActive: true,
+      updatedBy,
+    });
+    console.log("Default TaskExtensionMaster created (daysBeforeDueDate: 2).");
+  } else {
+    console.log("TaskExtensionMaster already exists. Skipping.");
+  }
+
+  return master;
+}
+
+// 🟢 Seed Default TaskBucketAgingMaster (Only if not already present)
+async function ensureTaskBucketAgingMaster(updatedBy = null) {
+  let agingMaster = await TaskBucketAgingMaster.findOne();
+
+  if (!agingMaster) {
+    agingMaster = await TaskBucketAgingMaster.create({
+      pendingDaysThreshold: 2,
+      updatedBy,
+    });
+    console.log(
+      "Default TaskBucketAgingMaster created (pendingDaysThreshold: 2).",
+    );
+  } else {
+    console.log("TaskBucketAgingMaster already exists. Skipping.");
+  }
+
+  return agingMaster;
+}
+
 // 🟢 FIXED: Preserves existing database permissions on re-run instead of wiping them!
 async function ensureRole({
   name,
@@ -101,7 +140,6 @@ async function ensureRole({
   let role = await Role.findOne({ name: formattedName });
 
   if (!role) {
-    // Agar role DB me bilkul NAYA hai, tabhi create karenge default permissions ke sath
     return await Role.create({
       name: formattedName,
       displayName: displayName || name,
@@ -111,15 +149,12 @@ async function ensureRole({
     });
   }
 
-  // 🟢 Agar role already exist karta hai:
   role.canDelete = false;
   role.isSystemRole = true;
 
-  // Sirf Super & Admin jaise Full Access Roles ko hamesha latest permissions sync karenge
   if (isFullAccess) {
     role.permissions = permissions;
   } else {
-    // 🟢 DM, Member ya custom roles ke liye: Agar DB me pehle se permissions hain toh UNHE OVERWRITE NAHI KARENGE
     if (!role.permissions || role.permissions.length === 0) {
       role.permissions = permissions;
     }
@@ -229,28 +264,28 @@ async function main() {
       name: "super",
       displayName: "Super",
       permissions: fullPermissions,
-      isFullAccess: true, // Hamesha all permissions synced rahenge
+      isFullAccess: true,
     });
 
     const adminRole = await ensureRole({
       name: "admin",
       displayName: "Admin",
       permissions: fullPermissions,
-      isFullAccess: true, // Hamesha all permissions synced rahenge
+      isFullAccess: true,
     });
 
     const dmRole = await ensureRole({
       name: "delegator",
       displayName: "Delegator",
       permissions: [],
-      isFullAccess: false, // 🟢 Single-time create hone ke baad DB me jo bhi save / assign hoga, woh safe rahega!
+      isFullAccess: false,
     });
 
     const memberRole = await ensureRole({
       name: "employee",
       displayName: "Employee",
       permissions: [],
-      isFullAccess: false, // 🟢 Same for Employee
+      isFullAccess: false,
     });
 
     // 4. Ensure Organizational Defaults
@@ -291,7 +326,11 @@ async function main() {
 
     const adminId = adminUser ? adminUser._id : null;
 
-    // 7. Seed Remaining Users
+    // 7. Ensure Default Masters (After Admin/Super User so updatedBy is linked)
+    await ensureTaskExtensionMaster(adminId || superId);
+    await ensureTaskBucketAgingMaster(adminId || superId);
+
+    // 8. Seed Remaining Users
     await ensureUser({
       employeeCode: "DELEGATOR001",
       name: "Delegator User",

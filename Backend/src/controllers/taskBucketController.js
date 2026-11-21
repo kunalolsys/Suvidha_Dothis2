@@ -481,105 +481,100 @@ export const getTaskBuckets = async (req, res) => {
 
     // current logged in user
     const currentUser = await User.findById(userId).select("role");
+
     // =====================================================
     // QUERY PARAMS
     // =====================================================
-
     const search = req.query.search?.trim() || "";
-
-    const status = req.query.status || "";
-
+    const status = req.query.status?.trim() || "";
     const sortBy = req.query.sortBy || "newest";
 
     // =====================================================
     // SORT CONFIG
     // =====================================================
-
     let sortConfig = { createdAt: -1 };
 
     switch (sortBy) {
       case "oldest":
         sortConfig = { createdAt: 1 };
         break;
-
       case "title_asc":
         sortConfig = { title: 1 };
         break;
-
       case "title_desc":
         sortConfig = { title: -1 };
         break;
-
       case "status":
         sortConfig = { status: 1 };
         break;
-
       case "newest":
       default:
         sortConfig = { createdAt: -1 };
         break;
     }
-    const sortOrder = req.query.sortOrder === "asc" ? 1 : -1;
+
     // =====================================================
-    // FILTER
+    // BASE VISIBILITY FILTER
     // =====================================================
+    const normalizedStatus = status.toLowerCase();
+
+    const visibilityOr = [
+      {
+        assignmentMode: "Users",
+        targetUserDistribution: {
+          $elemMatch: {
+            user: userId,
+            status: "Pending",
+          },
+        },
+      },
+      {
+        assignmentMode: "Role",
+        targetRole: currentUser?.role,
+      },
+    ];
+
+    // Distributed / Completed tabs mein already distributed buckets bhi dikhni chahiye
+    if (
+      normalizedStatus === "distributed" ||
+      normalizedStatus === "completed" ||
+      normalizedStatus === "completedbyme" ||
+      normalizedStatus === "completed_by_me" ||
+      normalizedStatus === "all"
+    ) {
+      visibilityOr.push(
+        { targetUsers: userId },
+        { assignedTargetUsers: userId },
+        { createdBy: userId },
+        { completedBy: userId },
+      );
+    }
 
     const filter = {
       isDeleted: false,
-      $or: [
-        // =================================================
-        // USER BASED BUCKETS
-        // =================================================
-        {
-          assignmentMode: "Users",
-
-          targetUserDistribution: {
-            $elemMatch: {
-              user: userId,
-              status: "Pending",
-            },
-          },
-        },
-
-        // =================================================
-        // ROLE BASED BUCKETS
-        // =================================================
-        {
-          assignmentMode: "Role",
-
-          targetRole: currentUser?.role,
-        },
-      ],
+      $or: visibilityOr,
     };
 
     // =====================================================
-    // SEARCH FILTER
+    // SEARCH FILTER (Title, Description & Bucket ID - Long Text Safe)
     // =====================================================
-
     if (search) {
+      // Extra spaces aur newlines ko single space mein normalize karein
+      const normalizedSearch = search.replace(/\s+/g, " ").trim();
+
+      // Pehle 120 characters ka safe regex banayein (taaki 500+ char paste par regex fail na ho)
+      const safeSnippet = normalizedSearch.slice(0, 120);
+      const escapedSearch = safeSnippet.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+      // Agar multiple spaces ho DB mein to flexible whitespace regex banayein
+      const flexiblePattern = escapedSearch.replace(/\s+/g, "\\s+");
+
       filter.$and = [
         {
           $or: [
-            {
-              title: {
-                $regex: search,
-                $options: "i",
-              },
-            },
-
-            {
-              description: {
-                $regex: search,
-                $options: "i",
-              },
-            },
-
-            {
-              bucketId: {
-                $regex: search,
-                $options: "i",
-              },
-            },
+            { title: { $regex: flexiblePattern, $options: "i" } },
+            { description: { $regex: flexiblePattern, $options: "i" } },
+            { bucketId: { $regex: flexiblePattern, $options: "i" } },
           ],
         },
       ];
@@ -588,27 +583,49 @@ export const getTaskBuckets = async (req, res) => {
     // =====================================================
     // STATUS FILTER
     // =====================================================
-
-    if (status && status !== "all") {
+    if (status && normalizedStatus !== "all") {
       if (!filter.$and) {
         filter.$and = [];
       }
 
-      if (status.toLowerCase() === "distributed") {
+      if (normalizedStatus === "distributed") {
+        // Distributed ya Partially Distributed (jo abhi bucket level par close nahi hui hain)
         filter.$and.push({
-          distributionStatus: "Distributed",
+          status: { $ne: "Completed" },
+          distributionStatus: {
+            $in: ["Distributed", "Partially Distributed"],
+          },
+        });
+      } else if (normalizedStatus === "completed") {
+        // Woh distributed buckets jinke generated tasks complete hue ya nahi (neeche task-level filter hoga)
+        filter.$and.push({
+          status: { $ne: "Completed" },
+          distributionStatus: {
+            $in: ["Distributed", "Partially Distributed"],
+          },
+        });
+      } else if (
+        normalizedStatus === "completedbyme" ||
+        normalizedStatus === "completed_by_me"
+      ) {
+        // Sirf woh buckets jo user ne "Mark Complete" karke close kar di hain
+        filter.$and.push({
+          status: "Completed",
+          completedBy: userId,
+        });
+      } else if (normalizedStatus === "pending") {
+        filter.$and.push({
+          status: "Pending",
+          distributionStatus: "Pending",
         });
       } else {
-        filter.$and.push({
-          status,
-        });
+        filter.$and.push({ status });
       }
     }
 
     // =====================================================
     // GET BUCKETS
     // =====================================================
-
     const buckets = await TaskBucket.find(filter)
       .populate("targetRole", "name")
       .populate("targetUsers", "name email")
@@ -619,10 +636,78 @@ export const getTaskBuckets = async (req, res) => {
       .sort(sortConfig)
       .lean();
 
+    // =====================================================
+    // CHECK GENERATED TASKS COMPLETION STATUS FOR ALL BUCKETS
+    // =====================================================
+    const bucketIds = buckets.map((b) => b._id);
+
+    const [delegationTasks, recurringTasks] = bucketIds.length
+      ? await Promise.all([
+          DelegationTask.find({
+            bucketId: { $in: bucketIds },
+            isDeleted: { $ne: true },
+          })
+            .select(
+              "_id TaskId title status bucketId assignedTo dueDate completedAt",
+            )
+            .populate("assignedTo", "name email employeeCode")
+            .lean(),
+
+          RecurringTask.find({
+            bucketId: { $in: bucketIds },
+            isDeleted: { $ne: true },
+          })
+            .select(
+              "_id TaskId title status bucketId assignedTo dueDate completedAt",
+            )
+            .populate("assignedTo", "name email employeeCode")
+            .lean(),
+        ])
+      : [[], []];
+
+    const tasksByBucketId = new Map();
+    for (const task of [...delegationTasks, ...recurringTasks]) {
+      const bId = String(task.bucketId);
+      if (!tasksByBucketId.has(bId)) {
+        tasksByBucketId.set(bId, []);
+      }
+      tasksByBucketId.get(bId).push(task);
+    }
+
+    let enrichedBuckets = buckets.map((bucket) => {
+      const relatedTasks = tasksByBucketId.get(String(bucket._id)) || [];
+      const totalTasks = relatedTasks.length;
+      const completedTasks = relatedTasks.filter(
+        (t) => t.status === "Completed",
+      ).length;
+
+      // True only when at least 1 task was generated AND all of them are Completed
+      const isGeneratedTaskCompleted =
+        totalTasks > 0 && completedTasks === totalTasks;
+
+      return {
+        ...bucket,
+        isGeneratedTaskCompleted,
+        generatedTaskStats: {
+          total: totalTasks,
+          completed: completedTasks,
+          pending: totalTasks - completedTasks,
+        },
+        generatedTasksList: relatedTasks,
+      };
+    });
+
+    // Agar status === "Completed" bheja hai, to sirf wahi buckets return karein jinke generated tasks complete ho chuke hain
+    if (normalizedStatus === "completed") {
+      enrichedBuckets = enrichedBuckets.filter(
+        (b) => b.isGeneratedTaskCompleted,
+      );
+    }
+
     return res.status(200).json({
       success: true,
-      count: buckets.length,
-      data: buckets,
+      count: enrichedBuckets.length,
+      data: enrichedBuckets,
     });
   } catch (err) {
     console.log(err);

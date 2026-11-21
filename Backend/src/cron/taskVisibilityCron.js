@@ -220,7 +220,7 @@ const hideCompletedShiftTasks = async () => {
 
 // Schedule: Every 10 seconds in Asia/Kolkata timezone
 const startVisibilityCron = () => {
-  cron.schedule("*/10 * * * * *", makeTasksVisible, {
+  cron.schedule("*/3 * * * * *", makeTasksVisible, {
     timezone: "Asia/Kolkata",
   });
 

@@ -6,13 +6,20 @@ const formatDate = (date) => {
   return format(new Date(date), "dd MMM yyyy hh:mm a");
 };
 
+const truncateText = (text, maxLength = 100) => {
+  if (!text) return "-";
+  const str = String(text);
+  return str.length > maxLength ? `${str.slice(0, maxLength)}...` : str;
+};
+
 export const TELEGRAM_TEMPLATES = {
   TASK_ASSIGNED: ({ task, actor }) => `
 🔔 <b>Task Assignment Notification</b>
 A new task has been assigned to you.
 
 <b>Task ID:</b> ${task.TaskId || task.taskId}
-<b>Title:</b> ${task.title || task.description}
+<b>Title:</b> ${task.title || truncateText(task.description)}
+<b>Description:</b> ${truncateText(task.description)}
 
 <b>Assigned By:</b> ${actor?.name || "-"}
 
@@ -37,6 +44,7 @@ The following task has been completed.
 
 <b>Task ID:</b> ${task.TaskId}
 <b>Title:</b> ${task.title}
+<b>Description:</b> ${truncateText(task.description)}
 
 <b>Completed By:</b> ${actor?.name || "-"}
 
@@ -52,6 +60,7 @@ The task below has been reopened.
 
 <b>Task ID:</b> ${task.TaskId}
 <b>Title:</b> ${task.title}
+<b>Description:</b> ${truncateText(task.description)}
 
 <b>Reopened By:</b> ${actor?.name || "-"}
 
@@ -69,6 +78,7 @@ A task has been delegated to you.
 
 <b>Task ID:</b> ${task.TaskId}
 <b>Title:</b> ${task.title}
+<b>Description:</b> ${truncateText(task.description)}
 
 <b>Delegated By:</b> ${actor?.name || "-"}
 
@@ -84,6 +94,7 @@ This task is due today.
 
 <b>Task ID:</b> ${task.TaskId}
 <b>Title:</b> ${task.title}
+<b>Description:</b> ${truncateText(task.description)}
 
 <b>Due Date:</b> ${formatDate(task.dueDate)}
 
@@ -99,6 +110,7 @@ The following task is overdue.
 
 <b>Task ID:</b> ${task.TaskId}
 <b>Title:</b> ${task.title}
+<b>Description:</b> ${truncateText(task.description)}
 
 <b>Due Date:</b> ${formatDate(task.dueDate)}
 
@@ -106,6 +118,7 @@ Immediate attention is required.
 
 <i>Suvidha Dothis2</i>
 `,
+
   TASK_BUCKET_ASSIGNED: ({ task, actor, frontendUrl }) => `
 📦 <b>New Task Bucket Assigned</b>
 
@@ -113,22 +126,22 @@ You have received a new task bucket assignment.
 
 <b>Bucket ID:</b> ${task.bucketId}
 <b>Title:</b> ${task.title}
-
-<b>Description:</b>
-${task.description || "-"}
+<b>Description:</b> ${truncateText(task.description)}
 
 <b>Created At:</b> ${formatDate(task.createdAt)}
 <b>Assigned By:</b> ${actor?.name || "Manager"}
 
 <i>Suvidha Dothis2</i>
 `,
- BUCKET_COMPLETED: ({ task, actor }) => `
+
+  BUCKET_COMPLETED: ({ task, actor }) => `
 🎉 <b>Bucket Completed Successfully</b>
 
 A task bucket has been marked as completed.
 
 <b>Bucket ID:</b> ${task?.bucketId || "-"}
 <b>Title:</b> ${task?.title || "-"}
+<b>Description:</b> ${truncateText(task?.description)}
 
 <b>Completed By:</b> ${actor?.name || "-"}
 

@@ -410,7 +410,7 @@ export const generateUpcomingFmsInstanceTasks = async () => {
 
 const startFmsUpcomingInstancesCron = () => {
   cron.schedule(
-    "*/10 * * * * *",
+    "*/3 * * * * *",
     () => {
       generateUpcomingFmsInstanceTasks();
     },

@@ -81,6 +81,7 @@ export const SYSTEM_MODULES = [
       { key: "pending_buckets", label: "Pending Buckets Request" },
       { key: "bucket_view", label: "Buckets View" },
       { key: "manage_assignee", label: "Manage Assignee" },
+      { key: "bucket_aging_master", label: "Bucket Aging Master" },
     ],
   },
   // 9. Setup

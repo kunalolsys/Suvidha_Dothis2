@@ -71,6 +71,7 @@ import NotificationIntegrations from "./pages/Notificationintegrations";
 import AdminExtensionMaster from "./components/AdminExtensionMaster";
 import AdminExtensionApprovals from "./components/AdminExtensionApprovals";
 import UserExtendTasksList from "./components/UserExtendTasksList";
+import TaskBucketAgingMaster from "./components/TaskBucketAgingMaster";
 
 function App() {
   const [isSessionTimeoutModalOpen, setIsSessionTimeoutModalOpen] =
@@ -271,6 +272,14 @@ function App() {
                   element={
                     <PermissionRoute requiredPermission="manage_assignee">
                       <TaskAudienceMaster />
+                    </PermissionRoute>
+                  }
+                />
+                <Route
+                  path="/delegate/bucket-aging-master"
+                  element={
+                    <PermissionRoute requiredPermission="bucket_aging_master">
+                      <TaskBucketAgingMaster />
                     </PermissionRoute>
                   }
                 />

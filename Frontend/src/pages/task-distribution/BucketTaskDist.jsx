@@ -40,10 +40,17 @@ import { getSubmodulePermissions } from "../../utils/permissionUtils.js";
 
 const { TextArea } = Input;
 
+const BUCKET_TABS = [
+  { key: "Pending", label: "Pending" },
+  { key: "Distributed", label: "Distributed" },
+  { key: "Completed", label: "Completed By User" },
+  { key: "CompletedByMe", label: "Completed By Me" },
+];
+
 const TaskDistribution = () => {
   // Bucket List & Filters
   const [buckets, setBuckets] = useState([]);
-  const [activeTab, setActiveTab] = useState("Pending"); // "Pending" | "Distributed" | "Completed"
+  const [activeTab, setActiveTab] = useState("Pending"); // "Pending" | "Distributed" | "Completed" | "CompletedByMe"
   const [bucketSearch, setBucketSearch] = useState("");
   const debouncedBucketSearch = useDebounce(bucketSearch, 350);
 
@@ -55,7 +62,7 @@ const TaskDistribution = () => {
   const [savingStatusMap, setSavingStatusMap] = useState({});
   const debounceTimersRef = useRef({});
 
-  // Complete Bucket Modal State (Same as earlier flow)
+  // Complete Bucket Modal State
   const [completeModalBucket, setCompleteModalBucket] = useState(null);
   const [completeRemark, setCompleteRemark] = useState("");
   const [completingBucket, setCompletingBucket] = useState(false);
@@ -74,13 +81,13 @@ const TaskDistribution = () => {
     "my_bucket",
     isSuper,
   );
-
+  const [loadingBuckets, setLoadingBuckets] = useState(false);
   // =========================================================
-  // 1. FETCH BUCKETS BY TAB (Pending / Distributed / Completed)
+  // 1. FETCH BUCKETS BY TAB (Pending / Distributed / Completed / CompletedByMe)
   // =========================================================
   const fetchBuckets = async () => {
+    setLoadingBuckets(true);
     try {
-      const apiStatus = activeTab === "Completed" ? "Completed" : "Pending";
       const res = await api.get("/task-buckets", {
         params: {
           search: debouncedBucketSearch || undefined,
@@ -92,9 +99,10 @@ const TaskDistribution = () => {
     } catch (err) {
       console.error(err);
       toast.error("Failed to fetch task buckets");
+    } finally {
+      setLoadingBuckets(false);
     }
   };
-
   useEffect(() => {
     fetchBuckets();
   }, [debouncedBucketSearch, activeTab]);
@@ -174,39 +182,19 @@ const TaskDistribution = () => {
   const isBucketDistributed = (bucket) => {
     return (
       bucket.distributionStatus === "Distributed" ||
+      bucket.distributionStatus === "Partially Distributed" ||
       (Array.isArray(bucket.generatedTasks) && bucket.generatedTasks.length > 0)
     );
   };
 
   const areBucketTasksCompleted = (bucket) => {
-    if (!isBucketDistributed(bucket)) return false;
-    const tasks = Array.isArray(bucket.generatedTasks)
-      ? bucket.generatedTasks
-      : [];
-    // If populated task objects exist, check all are Completed; otherwise allow when distributed
-    const objectTasks = tasks.filter(
-      (t) => t && typeof t === "object" && t.status,
-    );
-    if (objectTasks.length > 0) {
-      return objectTasks.every((t) => t.status === "Completed");
+    if (typeof bucket.isGeneratedTaskCompleted === "boolean") {
+      return bucket.isGeneratedTaskCompleted;
     }
-    return true;
+    return false;
   };
 
-  // Filter buckets per active tab ("Pending" | "Distributed" | "Completed")
-  const displayedBuckets = useMemo(() => {
-    if (activeTab === "Completed") {
-      return buckets.filter((b) => b.status === "Completed");
-    }
-    if (activeTab === "Distributed") {
-      return buckets.filter(
-        (b) => b.status !== "Completed" && isBucketDistributed(b),
-      );
-    }
-    return buckets.filter(
-      (b) => b.status !== "Completed" && !isBucketDistributed(b),
-    );
-  }, [buckets, activeTab]);
+  const displayedBuckets = buckets;
 
   // =========================================================
   // 5. LIVE UPDATE BUCKET (PUT /task-buckets/:id)
@@ -322,7 +310,6 @@ const TaskDistribution = () => {
                 description: updatedBucket.description,
                 taskEndDays: updatedBucket.taskEndDays,
               },
-              description: updatedBucket.description,
               taskEndDays: updatedBucket.taskEndDays ?? nextTaskEndDays,
             },
           };
@@ -354,9 +341,14 @@ const TaskDistribution = () => {
     if (debounceTimersRef.current[bucket._id]) {
       clearTimeout(debounceTimersRef.current[bucket._id]);
     }
+
+    const text = overrides.description ?? "";
+    const isTypingSpace = text.endsWith(" ") || text.endsWith("\n");
+    const delay = isTypingSpace ? 1800 : 1200;
+
     debounceTimersRef.current[bucket._id] = setTimeout(() => {
       persistBucketChanges(bucket, overrides);
-    }, 600);
+    }, delay);
   };
 
   // =========================================================
@@ -528,7 +520,7 @@ const TaskDistribution = () => {
   };
 
   // =========================================================
-  // 8. MARK DISTRIBUTED BUCKET AS COMPLETED (SAME AS EARLIER)
+  // 8. MARK DISTRIBUTED BUCKET AS COMPLETED
   // =========================================================
   const handleConfirmCompleteBucket = async () => {
     if (!completeModalBucket?._id) return;
@@ -559,6 +551,9 @@ const TaskDistribution = () => {
   const currentStep =
     selectedBucketIds.length === 0 ? 1 : !selectedEmployee ? 2 : 3;
 
+  const activeTabLabel =
+    BUCKET_TABS.find((t) => t.key === activeTab)?.label || activeTab;
+
   return (
     <div className="min-h-screen bg-[#f4f7fb] p-4 sm:p-6">
       <div className="space-y-6">
@@ -577,7 +572,7 @@ const TaskDistribution = () => {
                 Task Bucket Distribution
               </h1>
               <p className="text-blue-100 mt-1.5 text-xs sm:text-sm max-w-2xl">
-                Pick undistributed task buckets, customize description &
+                Pick undistributed task buckets, customize description &amp;
                 completion days live, and assign them to an employee.
               </p>
             </div>
@@ -641,31 +636,31 @@ const TaskDistribution = () => {
                         Available Task Buckets
                       </CardTitle>
                       <p className="text-[11px] text-slate-400">
-                        Distributed buckets lock automatically & can be marked
-                        complete once tasks finish
+                        Distributed buckets lock automatically &amp; can be
+                        marked complete once tasks finish
                       </p>
                     </div>
                   </div>
 
-                  {/* PENDING / DISTRIBUTED / COMPLETED SEGMENTED TABS */}
-                  <div className="bg-slate-100 p-1 rounded-xl border border-slate-200/80 flex items-center gap-1">
-                    {["Pending", "Distributed", "Completed"].map((tab) => {
-                      const active = activeTab === tab;
+                  {/* PENDING / DISTRIBUTED / COMPLETED / COMPLETED BY ME SEGMENTED TABS */}
+                  <div className="bg-slate-100 p-1 rounded-xl border border-slate-200/80 flex flex-wrap items-center gap-1">
+                    {BUCKET_TABS.map((tab) => {
+                      const active = activeTab === tab.key;
                       return (
                         <button
-                          key={tab}
+                          key={tab.key}
                           type="button"
                           onClick={() => {
-                            setActiveTab(tab);
+                            setActiveTab(tab.key);
                             setSelectedBucketsMap({});
                           }}
-                          className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                          className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                             active
                               ? "bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-xs"
                               : "text-slate-600 hover:text-slate-900"
                           }`}
                         >
-                          {tab}
+                          {tab.label}
                         </button>
                       );
                     })}
@@ -730,12 +725,19 @@ const TaskDistribution = () => {
               </CardHeader>
 
               <CardContent className="p-5 mt-2">
-                {displayedBuckets.length === 0 ? (
+                {loadingBuckets ? (
+                  <div className="h-[380px] flex flex-col items-center justify-center gap-3 text-center">
+                    <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
+                    <span className="text-xs font-medium text-slate-500">
+                      Loading {activeTabLabel.toLowerCase()} buckets...
+                    </span>
+                  </div>
+                ) : displayedBuckets.length === 0 ? (
                   <div className="h-[380px] flex flex-col items-center justify-center text-center">
                     <Empty
                       description={
                         <span className="text-xs text-slate-400">
-                          No {activeTab.toLowerCase()} task buckets found
+                          No {activeTabLabel.toLowerCase()} task buckets found
                         </span>
                       }
                     />
@@ -745,12 +747,13 @@ const TaskDistribution = () => {
                     {displayedBuckets.map((bucket) => {
                       const selectedEntry = selectedBucketsMap[bucket._id];
                       const isSelected = Boolean(selectedEntry);
-                      const isCompleted = bucket.status === "Completed";
+                      const isClosed =
+                        bucket.status === "Completed" ||
+                        activeTab === "CompletedByMe";
                       const distributed = isBucketDistributed(bucket);
+                      const tasksCompleted = areBucketTasksCompleted(bucket);
                       const canMarkComplete =
-                        !isCompleted &&
-                        distributed &&
-                        areBucketTasksCompleted(bucket);
+                        !isClosed && distributed && tasksCompleted;
                       const saveState = savingStatusMap[bucket._id];
 
                       const currentDescription = isSelected
@@ -771,12 +774,12 @@ const TaskDistribution = () => {
                         <div
                           key={bucket._id}
                           onClick={() => {
-                            if (!isCompleted && !distributed) {
+                            if (!isClosed && !distributed) {
                               toggleBucketSelection(bucket, !isSelected);
                             }
                           }}
                           className={`group relative rounded-2xl border p-4 transition-all duration-150 ${
-                            isCompleted
+                            isClosed
                               ? "bg-slate-50/90 border-slate-200/80 opacity-85 cursor-default"
                               : distributed
                                 ? "bg-emerald-50/35 border-emerald-200/90 cursor-default"
@@ -786,13 +789,13 @@ const TaskDistribution = () => {
                           }`}
                         >
                           {/* Left Active Accent Bar */}
-                          {isSelected && !isCompleted && !distributed && (
+                          {isSelected && !isClosed && !distributed && (
                             <div className="absolute left-0 top-3 bottom-3 w-1 rounded-r-full bg-gradient-to-b from-indigo-600 to-cyan-500" />
                           )}
 
                           <div className="flex items-start justify-between gap-4">
                             <div className="flex items-start gap-3 min-w-0 flex-1">
-                              {!isCompleted && !distributed ? (
+                              {!isClosed && !distributed ? (
                                 <Checkbox
                                   checked={isSelected}
                                   onClick={(e) => e.stopPropagation()}
@@ -821,12 +824,13 @@ const TaskDistribution = () => {
                                     {bucket.title}
                                   </h3>
 
-                                  {distributed && !isCompleted && (
+                                  {distributed && !isClosed && (
                                     <Tag
                                       color="green"
                                       className="m-0 rounded-md font-semibold"
                                     >
-                                      Distributed
+                                      {bucket.distributionStatus ||
+                                        "Distributed"}
                                     </Tag>
                                   )}
 
@@ -855,7 +859,7 @@ const TaskDistribution = () => {
                                 </div>
 
                                 {/* EDITABLE DESCRIPTION ONLY WHEN SELECTED & NOT DISTRIBUTED */}
-                                {isSelected && !isCompleted && !distributed ? (
+                                {isSelected && !isClosed && !distributed ? (
                                   <div
                                     onClick={(e) => e.stopPropagation()}
                                     className="mt-2"
@@ -868,12 +872,35 @@ const TaskDistribution = () => {
                                       autoSize={{ minRows: 2, maxRows: 4 }}
                                       value={currentDescription}
                                       placeholder="Enter task description..."
+                                      onKeyDown={(e) => e.stopPropagation()}
                                       onChange={(e) =>
                                         handleDescriptionChange(
                                           bucket._id,
                                           e.target.value,
                                         )
                                       }
+                                      onBlur={() => {
+                                        if (
+                                          debounceTimersRef.current[bucket._id]
+                                        ) {
+                                          clearTimeout(
+                                            debounceTimersRef.current[
+                                              bucket._id
+                                            ],
+                                          );
+                                        }
+                                        if (selectedEntry) {
+                                          persistBucketChanges(
+                                            selectedEntry.bucket,
+                                            {
+                                              description:
+                                                selectedEntry.description,
+                                              taskEndDays:
+                                                selectedEntry.taskEndDays,
+                                            },
+                                          );
+                                        }
+                                      }}
                                       className="text-xs rounded-xl border-indigo-200 focus:border-indigo-500 bg-white"
                                     />
                                   </div>
@@ -903,6 +930,24 @@ const TaskDistribution = () => {
                                     </span>
                                   )}
 
+                                  {/* Generated Tasks Completion Status Pill */}
+                                  {distributed &&
+                                    bucket.generatedTaskStats?.total > 0 && (
+                                      <span
+                                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border font-semibold ${
+                                          tasksCompleted
+                                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                            : "bg-amber-50 text-amber-700 border-amber-200"
+                                        }`}
+                                      >
+                                        <CheckCircle2 className="w-3 h-3" />
+                                        Tasks:{" "}
+                                        {bucket.generatedTaskStats.completed}/
+                                        {bucket.generatedTaskStats.total}{" "}
+                                        Completed
+                                      </span>
+                                    )}
+
                                   {Array.isArray(bucket.checklist) &&
                                     bucket.checklist.length > 0 && (
                                       <span className="inline-flex items-center gap-1 bg-slate-100/80 px-2 py-0.5 rounded-md">
@@ -911,22 +956,48 @@ const TaskDistribution = () => {
                                       </span>
                                     )}
 
-                                  <Tag
-                                    color={isCompleted ? "green" : "blue"}
+                                  {/* <Tag
+                                    color={isClosed ? "green" : "blue"}
                                     className="m-0 rounded-md text-[10px]"
                                   >
                                     {bucket.status}
-                                  </Tag>
+                                  </Tag> */}
                                 </div>
 
-                                {/* COMPLETE BUCKET ACTION (WHEN DISTRIBUTED & TASKS COMPLETED) */}
+                                {/* Generated Tasks List Preview in Completed Tab */}
+                                {activeTab === "Completed" &&
+                                  Array.isArray(bucket.generatedTasksList) &&
+                                  bucket.generatedTasksList.length > 0 && (
+                                    <div className="mt-2.5 flex flex-wrap gap-1.5">
+                                      {bucket.generatedTasksList.map((gt) => (
+                                        <span
+                                          key={gt._id}
+                                          className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md bg-white border border-emerald-200 text-slate-600"
+                                        >
+                                          <strong className="text-indigo-700">
+                                            {gt.TaskId || "Task"}
+                                          </strong>
+                                          <span>•</span>
+                                          <span>
+                                            {gt.assignedTo?.name || "Assignee"}
+                                          </span>
+                                          <span className="text-emerald-600 font-semibold">
+                                            ({gt.status})
+                                          </span>
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+
+                                {/* COMPLETE BUCKET ACTION (WHEN DISTRIBUTED & ALL GENERATED TASKS COMPLETED) */}
                                 {canUpdate && canMarkComplete && (
                                   <div
                                     onClick={(e) => e.stopPropagation()}
                                     className="mt-3 pt-2.5 border-t border-emerald-200/70 flex items-center justify-between"
                                   >
                                     <span className="text-[11px] text-emerald-700 font-medium">
-                                      Ready to close this distributed bucket
+                                      All generated tasks completed — Ready to
+                                      close bucket
                                     </span>
                                     <button
                                       type="button"
@@ -947,7 +1018,7 @@ const TaskDistribution = () => {
                             {/* INLINE EDITABLE taskEndDays BOX */}
                             <Tooltip
                               title={
-                                isCompleted || distributed
+                                isClosed || distributed
                                   ? "Locked after distribution"
                                   : !isSelected
                                     ? "Select bucket to edit End Days"
@@ -973,7 +1044,7 @@ const TaskDistribution = () => {
                                   max={365}
                                   size="small"
                                   disabled={
-                                    isCompleted ||
+                                    isClosed ||
                                     distributed ||
                                     !isSelected ||
                                     bucket.isRecurrent
@@ -1204,7 +1275,7 @@ const TaskDistribution = () => {
         </div>
       </div>
 
-      {/* MARK BUCKET COMPLETE MODAL (SAME AS EARLIER FLOW) */}
+      {/* MARK BUCKET COMPLETE MODAL */}
       <Modal
         title="Mark Task Bucket as Completed"
         open={Boolean(completeModalBucket)}

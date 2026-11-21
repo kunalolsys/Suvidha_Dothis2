@@ -5,7 +5,7 @@ import FmsInstanceTask from "../models/FmsInstanceTask.js"; // 👈 ADDED
 import FmsInstance from "../models/FmsInstance.js";
 
 // const SCHEDULE = "*/5 * * * *";
-const SCHEDULE = "*/10 * * * * *";
+const SCHEDULE = "*/3 * * * * *";
 function resolveDueDate(task) {
   if (task.plannedDueDate) return new Date(task.plannedDueDate); // FMS Priority
   if (task.dueDate) return new Date(task.dueDate);

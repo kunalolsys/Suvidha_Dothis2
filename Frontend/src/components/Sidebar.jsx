@@ -384,6 +384,13 @@ const Sidebar = ({ children }) => {
         icon: Users,
       });
     }
+    if (hasPermission("bucket_aging_master", "read")) {
+      items.push({
+        path: "/delegate/bucket-aging-master",
+        label: "Bucket Aging Master",
+        icon: Users,
+      });
+    }
     return items;
   }, [hasPermission]);
 

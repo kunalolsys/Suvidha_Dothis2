@@ -12,7 +12,6 @@ import {
   completeTaskBucket,
   getAllTaskBuckets,
   updateTaskBucket,
-  getUndistributedTaskBuckets,
 } from "../controllers/taskBucketController.js";
 
 import { authenticateJWT } from "../middleware/authMiddleware.js";
@@ -23,6 +22,7 @@ import {
   exportTaskBuckets,
   importTaskBuckets,
 } from "../services/imports/importBucket.js";
+import { getEmployeeAgingBucketList, getEmployeeWiseAgingBucketCounts, getTaskBucketAgingMaster, upsertTaskBucketAgingMaster } from "../controllers/taskBucketAgingController.js";
 const router = express.Router();
 router.post(
   "/import",
@@ -57,5 +57,20 @@ router.patch("/:id/complete", authenticateJWT, completeTaskBucket);
 router.get("/:id/reporting-users", authenticateJWT, getBucketReportingUsers);
 router.get("/bucket/export", authenticateJWT, exportTaskBuckets);
 router.get("/bucket/export-pending", authenticateJWT, exportPendingTaskBuckets);
-router.get("/public/undistributed", getUndistributedTaskBuckets);
+
+// Master GET & SET (pendingDaysThreshold)
+router.get("/aging/master", getTaskBucketAgingMaster);
+router.put("/aging/master", upsertTaskBucketAgingMaster);
+
+// API 1: All Employees Pending Aging Bucket Counts (No employeeCode param)
+router.get(
+  "/aging/employee-counts",
+  getEmployeeWiseAgingBucketCounts,
+);
+
+// API 2: Specific Employee Pending Aging Buckets List (By employeeCode param)
+router.get(
+  "/aging/employee/:employeeCode/list",
+  getEmployeeAgingBucketList,
+);
 export default router;
