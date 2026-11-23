@@ -76,7 +76,7 @@ const detectTemplate = (normalizedHeaders) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MAIN CONTROLLER
+// MAIN CONTROLLER (ONLY TARGET USERS BASED IMPORT)
 // ─────────────────────────────────────────────────────────────────────────────
 export const importTaskBuckets = handleAsync(async (req, res, next) => {
   if (!req.file) return next(new AppError("No file uploaded.", 400));
@@ -84,7 +84,7 @@ export const importTaskBuckets = handleAsync(async (req, res, next) => {
   const filePath = req.file.path;
   const importLog = []; // one entry per row — imported | skipped | error
   const created = []; // TaskBucket instances to bulk-insert
-  const seenInBatch = new Set(); // title|assignmentMode|audience dedup within file
+  const seenInBatch = new Set(); // title|audience dedup within file
   let rows = [];
   let rowCount = 0;
 
@@ -115,17 +115,25 @@ export const importTaskBuckets = handleAsync(async (req, res, next) => {
       );
     }
 
-    // ── 2. Header validation ─────────────────────────────────────────────────
+    // ── 2. Header validation (Only Target Users required, no Role/Assignment Mode) ──
     const rawHeaders = Object.keys(rows[0] || {}).map((h) => String(h).trim());
     const normHeaders = rawHeaders.map(norm);
     const detected = detectTemplate(normHeaders);
-    const missing = REQUIRED[detected].filter((h) => !normHeaders.includes(h));
+
+    const requiredHeaders = [
+      "title",
+      "description",
+      "targetusers",
+      "startdate",
+      "taskenddays",
+    ];
+    const missing = requiredHeaders.filter((h) => !normHeaders.includes(h));
 
     if (missing.length > 0) {
       fs.unlinkSync(filePath);
       return next(
         new AppError(
-          `Missing required column(s) for ${detected} bucket import: ${missing.join(", ")}.`,
+          `Missing required column(s) for bucket import: ${missing.join(", ")}.`,
           400,
         ),
       );
@@ -137,15 +145,11 @@ export const importTaskBuckets = handleAsync(async (req, res, next) => {
       return rawKey ? String(row[rawKey] || "").trim() : "";
     };
 
-    // ── Pre-load Role and User caches to minimise DB round-trips ─────────────
-    const [allRoles, allUsers] = await Promise.all([
-      Role.find().lean(),
-      User.find({ isDeleted: false, isActive: true })
-        .select("_id name email role department assignShift")
-        .lean(),
-    ]);
+    // ── Pre-load active Users cache to minimise DB round-trips ───────────────
+    const allUsers = await User.find({ isDeleted: false, isActive: true })
+      .select("_id name email role department assignShift")
+      .lean();
 
-    const roleByName = new Map(allRoles.map((r) => [r.name.toLowerCase(), r]));
     const userByName = new Map(allUsers.map((u) => [u.name.toLowerCase(), u]));
     const userByEmail = new Map(
       allUsers.map((u) => [u.email.toLowerCase(), u]),
@@ -164,131 +168,84 @@ export const importTaskBuckets = handleAsync(async (req, res, next) => {
         // ── Extract values ─────────────────────────────────────────────────
         const title = getVal(row, "title");
         const description = getVal(row, "description");
-        const assignmentMode = getVal(row, "assignmentmode"); // "Role" | "Users"
-        const targetRoleRaw = getVal(row, "targetrole");
         const targetUsersRaw = getVal(row, "targetusers"); // comma-separated names/emails
         const startDateRaw = getVal(row, "startdate");
         const taskEndDaysRaw = getVal(row, "taskenddays");
-        const checklistRaw = getVal(row, "checklist");
-        const frequencyRaw = getVal(row, "frequency");
-        const endDateRaw = getVal(row, "enddate");
-        const weekDaysRaw = getVal(row, "weekdays");
-        const parentTaskIdRaw = getVal(row, "parenttaskid");
-        const startTimeRaw = getVal(row, "starttimesetting");
-        const depFreqRaw = getVal(row, "dependencyfrequency");
-        const xValueRaw = getVal(row, "xvalue");
         const remarkRaw = getVal(row, "remark");
 
         // ── Required field check ────────────────────────────────────────────
         if (!title) throw new Error("Title is required.");
         if (!description) throw new Error("Description is required.");
+        if (!targetUsersRaw)
+          throw new Error("Target Users is required (name or email).");
 
-        const mode = (() => {
-          const m = assignmentMode.toLowerCase();
-          if (m === "role") return "Role";
-          if (m === "users" || m === "user") return "Users";
-          throw new Error(
-            `Invalid Assignment Mode "${assignmentMode}". Use "Role" or "Users".`,
-          );
-        })();
+        // ── Resolve Target Users ────────────────────────────────────────────
+        const names = targetUsersRaw
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
 
-        // ── Resolve audience ────────────────────────────────────────────────
-        let resolvedRole = null;
+        if (names.length === 0) throw new Error("Target Users list is empty.");
+
         let resolvedUsers = [];
-        let audienceKey = "";
-
-        if (mode === "Role") {
-          if (!targetRoleRaw)
+        for (const name of names) {
+          const found = resolveUser(name);
+          if (!found)
             throw new Error(
-              "Target Role is required when Assignment Mode is Role.",
+              `User "${name}" not found. Use exact name or email.`,
             );
-          resolvedRole = roleByName.get(targetRoleRaw.toLowerCase());
-          // console.log("object", resolvedRole);
-          if (!resolvedRole)
-            throw new Error(`Role "${targetRoleRaw}" not found.`);
-          audienceKey = `role:${resolvedRole._id}`;
-        } else {
-          // Users mode — requires Target Users column
-          if (!targetUsersRaw)
-            throw new Error(
-              "Target Users is required when Assignment Mode is Users.",
-            );
-          const names = targetUsersRaw
-            .split(",")
-            .map((s) => s.trim())
-            .filter(Boolean);
-          if (names.length === 0)
-            throw new Error("Target Users list is empty.");
-
-          for (const name of names) {
-            const found = resolveUser(name);
-            if (!found)
-              throw new Error(
-                `User "${name}" not found. Use exact name or email.`,
-              );
-            resolvedUsers.push(found);
-          }
-
-          // Dedup users
-          const seen = new Set();
-          resolvedUsers = resolvedUsers.filter((u) => {
-            const id = String(u._id);
-            if (seen.has(id)) return false;
-            seen.add(id);
-            return true;
-          });
-
-          audienceKey = `users:${resolvedUsers
-            .map((u) => u._id)
-            .sort()
-            .join(",")}`;
+          resolvedUsers.push(found);
         }
 
-        // ── Template-specific validation & date parsing ─────────────────────
+        // Dedup users within row
+        const seen = new Set();
+        resolvedUsers = resolvedUsers.filter((u) => {
+          const id = String(u._id);
+          if (seen.has(id)) return false;
+          seen.add(id);
+          return true;
+        });
+
+        const resolvedUserIds = resolvedUsers.map((u) => u._id);
+        const audienceKey = `users:${resolvedUserIds.map(String).sort().join(",")}`;
+
+        // ── Date & End Days validation ──────────────────────────────────────
         const isDependent = detected === "dependent";
         const isRecurrent = detected === "recurring";
 
-        let startDate = null;
-        let taskEndDays = null;
-        let frequency = null;
-        let endDate = null;
-        let weekDays = [];
-        let dependencyConfig = {
-          taskDependent: null,
-          startTimeSetting: null,
-          isDependentFrequency: null,
-          xValue: null,
-        };
-        // ── DELEGATION (standard) ────────────────────────────────────────
-        startDate = parseFlexibleDate(startDateRaw);
+        const startDate = parseFlexibleDate(startDateRaw);
         if (!startDate)
           throw new Error(
             `Invalid Start Date "${startDateRaw}". Use DD-MM-YYYY.`,
           );
 
-        taskEndDays = Number(taskEndDaysRaw);
+        const taskEndDays = Number(taskEndDaysRaw);
         if (isNaN(taskEndDays) || taskEndDays < 1)
           throw new Error(
             `Task End Days "${taskEndDaysRaw}" must be a positive number ≥ 1.`,
           );
 
         // ── Batch-level dedup ────────────────────────────────────────────────
-        const batchKey = `${title.toLowerCase()}|${mode}|${audienceKey}`;
+        const batchKey = `${title.toLowerCase()}|Users|${audienceKey}`;
         if (seenInBatch.has(batchKey)) {
           importLog.push({
             row: rowCount,
             status: "skipped",
-            reason: `Duplicate in this file: same title + audience combination already queued.`,
+            reason: `Duplicate in this file: same title + target users combination already queued.`,
             title,
-            assignmentMode: mode,
+            assignmentMode: "Users",
           });
           continue;
         }
 
-        // ── DB-level dedup (same title + assignmentMode + same audience within last 24h) ──
+        // ── DB-level dedup (same title + same target users within last 24h) ─
         const recentDupe = await TaskBucket.findOne({
-          title: new RegExp(`^${title.trim()}$`, "i"),
-          assignmentMode: mode,
+          title: new RegExp(
+            `^${title.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
+            "i",
+          ),
+          assignmentMode: "Users",
+          targetUsers: { $all: resolvedUserIds, $size: resolvedUserIds.length },
           isDeleted: false,
           createdAt: { $gte: new Date(Date.now() - 86400000) },
         });
@@ -296,37 +253,20 @@ export const importTaskBuckets = handleAsync(async (req, res, next) => {
           importLog.push({
             row: rowCount,
             status: "skipped",
-            reason: `Duplicate: a bucket with the same title and assignment mode was created in the last 24 hours (ID: ${recentDupe.bucketId}).`,
+            reason: `Duplicate: a bucket with the same title and target users was created in the last 24 hours (ID: ${recentDupe.bucketId}).`,
             title,
-            assignmentMode: mode,
+            assignmentMode: "Users",
           });
           continue;
         }
 
-        // ── Build distribution arrays ────────────────────────────────────────
-        let assignedTargetUsers = [];
-        let targetUserDistribution = [];
-
-        if (mode === "Users") {
-          assignedTargetUsers = resolvedUsers.map((u) => u._id);
-          targetUserDistribution = resolvedUsers.map((u) => ({
-            user: u._id,
-            status: "Pending",
-            distributedAt: null,
-          }));
-        }
-
-        if (mode === "Role") {
-          const roleUsers = allUsers.filter(
-            (u) => String(u.role) === String(resolvedRole._id),
-          );
-          assignedTargetUsers = roleUsers.map((u) => u._id);
-          targetUserDistribution = roleUsers.map((u) => ({
-            user: u._id,
-            status: "Pending",
-            distributedAt: null,
-          }));
-        }
+        // ── Build distribution arrays (ONLY for targetUsers) ─────────────────
+        const assignedTargetUsers = resolvedUserIds;
+        const targetUserDistribution = resolvedUserIds.map((uId) => ({
+          user: uId,
+          status: "Pending",
+          distributedAt: null,
+        }));
 
         // ── Build bucket document ────────────────────────────────────────────
         const bucketDoc = new TaskBucket({
@@ -334,9 +274,9 @@ export const importTaskBuckets = handleAsync(async (req, res, next) => {
           description: description.trim(),
           createdBy: req.cookies.userId || req.user._id,
 
-          assignmentMode: mode,
-          targetRole: mode === "Role" ? resolvedRole._id : null,
-          targetUsers: mode === "Users" ? resolvedUsers.map((u) => u._id) : [],
+          assignmentMode: "Users",
+          targetRole: null,
+          targetUsers: resolvedUserIds,
           assignedTargetUsers,
           targetUserDistribution,
 
@@ -353,11 +293,8 @@ export const importTaskBuckets = handleAsync(async (req, res, next) => {
           status: "imported",
           reason: "OK",
           title,
-          assignmentMode: mode,
-          audience:
-            mode === "Role"
-              ? resolvedRole.name
-              : resolvedUsers.map((u) => u.name).join(", "),
+          assignmentMode: "Users",
+          audience: resolvedUsers.map((u) => u.name).join(", "),
           type: detected,
         });
       } catch (rowErr) {
@@ -366,40 +303,31 @@ export const importTaskBuckets = handleAsync(async (req, res, next) => {
           status: "error",
           reason: rowErr.message,
           title: String(row["Title"] || row["title"] || ""),
-          assignmentMode: String(
-            row["Assignment Mode"] || row["assignmentmode"] || "",
-          ),
-          audience: String(row["Target Role"] || row["Target Users"] || ""),
+          assignmentMode: "Users",
+          audience: String(row["Target Users"] || row["targetusers"] || ""),
           type: detected,
         });
       }
     } // end for
 
-    // ── 4. Insert valid buckets ──────────────────────────────────────────────
+    // ── 4. Insert valid buckets (Using .create so pre-save hook generates bucketId) ──
     let insertedCount = 0;
     if (created.length > 0) {
-      // Use insertMany with ordered:false so one bad doc doesn't abort the rest
-      try {
-        await TaskBucket.insertMany(created, { ordered: false });
-        insertedCount = created.length;
-      } catch (bulkErr) {
-        // Some may have inserted; log the failures
-        if (bulkErr.writeErrors) {
-          bulkErr.writeErrors.forEach((we) => {
-            const failedDoc = created[we.index];
-            const logIdx = importLog.findIndex(
-              (l) =>
-                l.status === "imported" &&
-                l.title?.toLowerCase() === failedDoc?.title?.toLowerCase(),
-            );
-            if (logIdx >= 0) {
-              importLog[logIdx].status = "error";
-              importLog[logIdx].reason = we.errmsg || "Database insert error";
-            }
-          });
-          insertedCount = created.length - bulkErr.writeErrors.length;
-        } else {
-          throw bulkErr; // rethrow unexpected errors
+      for (const bucketDoc of created) {
+        try {
+          await bucketDoc.save();
+          insertedCount++;
+        } catch (saveErr) {
+          const logIdx = importLog.findIndex(
+            (l) =>
+              l.status === "imported" &&
+              l.title?.toLowerCase() === bucketDoc?.title?.toLowerCase(),
+          );
+          if (logIdx >= 0) {
+            importLog[logIdx].status = "error";
+            importLog[logIdx].reason =
+              saveErr.message || "Database insert error";
+          }
         }
       }
     }
@@ -459,58 +387,40 @@ export const importTaskBuckets = handleAsync(async (req, res, next) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// DOWNLOAD TEMPLATE CONTROLLER
-// Returns a pre-filled XLSX with correct headers for each template type.
-// GET /api/v1/task-buckets/import/template?type=delegation|recurring|dependent
+// DOWNLOAD TEMPLATE CONTROLLER (ONLY TARGET USERS)
 // ─────────────────────────────────────────────────────────────────────────────
 export const downloadBucketImportTemplate = (req, res) => {
   const type = (req.query.type || "delegation").toLowerCase();
 
-  const templates = {
+  const tpl = {
     filename: "bucket_delegation_template.xlsx",
     headers: [
       "Title",
       "Description",
-      "Assignment Mode",
-      "Target Role",
       "Target Users",
       "Start Date",
       "Task End Days",
-      // "Checklist",
-      // "Remark",
     ],
     example: [
       "Monthly Vendor Audit",
       "Review all vendor invoices",
-      "Role",
-      "Manager",
-      "",
+      "Rahul Singh",
       "01-06-2026",
       "5",
-      // "Review docs,Update tracker",
-      // "",
     ],
     example2: [
       "Server Backup Check",
       "Verify backup integrity",
-      "Users",
-      "",
       "Rahul Singh, Priya Verma",
       "02-06-2026",
       "3",
-      // "Check logs",
-      // "",
     ],
     notes: [
-      "Assignment Mode must be exactly: Role OR Users",
-      "Target Role: use exact role name (e.g. Manager, Sr. Manager)",
-      "Target Users: comma-separated names OR emails (used when mode is Users)",
+      "Target Users: exact user full name or email address (comma-separated for multiple users)",
       "Start Date format: DD-MM-YYYY",
-      "Checklist: comma-separated items",
+      "Task End Days: positive number (>= 1)",
     ],
   };
-
-  const tpl = templates;
 
   const wb = XLSX.utils.book_new();
 
@@ -518,9 +428,9 @@ export const downloadBucketImportTemplate = (req, res) => {
   const dataSheet = XLSX.utils.aoa_to_sheet([
     tpl.headers,
     tpl.example,
-    ...(tpl.example2 ? [tpl.example2] : []),
+    tpl.example2,
   ]);
-  // Bold header row
+
   const range = XLSX.utils.decode_range(dataSheet["!ref"]);
   for (let c = range.s.c; c <= range.e.c; c++) {
     const cell = XLSX.utils.encode_cell({ r: 0, c });
@@ -542,9 +452,7 @@ export const downloadBucketImportTemplate = (req, res) => {
     ["General Rules"],
     ["Do not change column header names"],
     ["Dates must be in DD-MM-YYYY format"],
-    ["Assignment Mode is case-sensitive: Role or Users (capital first letter)"],
-    ["Target Role names must match exactly as configured in your system"],
-    ["Target Users: use full name or email address, comma-separated"],
+    ["Target Users: use exact full name or email address, comma-separated"],
   ];
   const notesSheet = XLSX.utils.aoa_to_sheet(notesData);
   XLSX.utils.book_append_sheet(wb, notesSheet, "Notes");

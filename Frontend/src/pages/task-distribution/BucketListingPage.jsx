@@ -511,14 +511,14 @@ export default function BucketListingPage() {
             {loading ? (
               [...Array(8)].map((_, i) => (
                 <TableRow key={i}>
-                  <TableCell colSpan={7}>
+                  <TableCell colSpan={canUpdate || canDelete ? 10 : 9}>
                     <div className="h-12 rounded-lg bg-slate-100 animate-pulse" />
                   </TableCell>
                 </TableRow>
               ))
             ) : buckets.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7}>
+                <TableCell colSpan={canUpdate || canDelete ? 10 : 9}>
                   <div className="py-20 flex flex-col items-center justify-center">
                     <AlertCircle size={40} className="text-slate-300 mb-3" />
 
@@ -538,63 +538,76 @@ export default function BucketListingPage() {
                   bucket.targetUsers?.length > 0
                     ? bucket.targetUsers
                     : bucket.assignedTargetUsers || [];
+
+                const titleText = bucket.title || "-";
+                const isLongTitle = titleText.length > 100;
+
+                const descText = bucket.description || "No description";
+                const isLongDesc = descText.length > 100;
+
                 return (
                   <TableRow
                     key={bucket._id}
                     className="hover:bg-slate-50 transition-colors"
                   >
-                    {/* BUCKET ID */}
-                    <TableCell className="pl-6 py-4">
+                    {/* 1. BUCKET ID */}
+                    <TableCell className="pl-6 py-4 whitespace-nowrap">
                       <span className="text-sm text-slate-700 font-medium">
                         {bucket.bucketId || "-"}
                       </span>
                     </TableCell>
-                    {/* BUCKET NAME */}
-                    <TableCell>
-                      <div className="text-sm font-medium text-slate-800">
-                        {bucket.title}
-                      </div>
+
+                    {/* 2. BUCKET NAME (100 char limit + hover tooltip + strict wrapping) */}
+                    <TableCell className="max-w-[200px]">
+                      {!isLongTitle ? (
+                        <div className="text-sm font-medium text-slate-800 whitespace-normal [overflow-wrap:anywhere]">
+                          {titleText}
+                        </div>
+                      ) : (
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div className="text-sm font-medium text-slate-800 whitespace-normal [overflow-wrap:anywhere] cursor-pointer">
+                                {titleText.slice(0, 100)}...
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent
+                              side="top"
+                              className="max-w-sm p-3 text-xs leading-relaxed [overflow-wrap:anywhere] whitespace-pre-wrap z-50"
+                            >
+                              {titleText}
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      )}
                     </TableCell>
-                    {/* DESCRIPTION */}
-                    <TableCell>
-                      <div className="max-w-[260px]">
-                        <p className="text-sm text-slate-600 line-clamp-2">
-                          {bucket.description || "No description"}
+
+                    {/* 3. DESCRIPTION (100 char limit + simple full hover tooltip without scrollbar) */}
+                    <TableCell className="max-w-[260px]">
+                      {!isLongDesc ? (
+                        <p className="text-sm text-slate-600 whitespace-normal [overflow-wrap:anywhere] m-0">
+                          {descText}
                         </p>
-                      </div>
+                      ) : (
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <p className="text-sm text-slate-600 whitespace-normal [overflow-wrap:anywhere] cursor-pointer m-0">
+                                {descText.slice(0, 100)}...
+                              </p>
+                            </TooltipTrigger>
+                            <TooltipContent
+                              side="top"
+                              className="max-w-md p-3 text-xs leading-relaxed [overflow-wrap:anywhere] whitespace-pre-wrap z-50"
+                            >
+                              {descText}
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      )}
                     </TableCell>
-                    {/* ASSIGNED TARGET */}
-                    {/* <TableCell>
-                    {bucket.assignmentMode === "Role" ? (
-                      <div>
-                        <div className="text-sm font-medium text-slate-700">
-                          {bucket.targetRole?.name || "-"}
-                        </div>
 
-                        <div className="text-xs text-slate-500 mt-1">
-                          {bucket.assignedTargetUsers?.length || 0} users
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex flex-wrap gap-1 max-w-[240px]">
-                        {bucket.targetUsers?.slice(0, 2)?.map((user) => (
-                          <span
-                            key={user._id}
-                            className="px-2 py-1 rounded-md bg-slate-100 border border-slate-200 text-[11px] text-slate-700"
-                          >
-                            {user.name}
-                          </span>
-                        ))}
-
-                        {bucket.targetUsers?.length > 2 && (
-                          <span className="px-2 py-1 rounded-md bg-blue-50 border border-blue-100 text-[11px] text-blue-700">
-                            +{bucket.targetUsers.length - 2} more
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </TableCell> */}
-                    {/* CREATED BY */}
+                    {/* 4. CREATED BY */}
                     <TableCell>
                       <div>
                         <div className="text-sm font-medium text-slate-700">
@@ -605,16 +618,15 @@ export default function BucketListingPage() {
                           {bucket.createdBy?.email || "-"}
                         </div>
                       </div>
-                    </TableCell>{" "}
-                    <TableCell>
-                      {(() => {
-                        const users =
-                          bucket.targetUsers?.length > 0
-                            ? bucket.targetUsers
-                            : bucket.assignedTargetUsers || [];
+                    </TableCell>
 
-                        return (
-                          <div className="flex flex-wrap items-center gap-1">
+                    {/* 5. ASSIGNED TO */}
+                    <TableCell>
+                      <div className="flex flex-wrap items-center gap-1 max-w-[220px]">
+                        {users.length === 0 ? (
+                          <span className="text-xs text-slate-400">-</span>
+                        ) : (
+                          <>
                             {users.slice(0, 3).map((user) => (
                               <span
                                 key={user._id}
@@ -653,12 +665,13 @@ export default function BucketListingPage() {
                                 </Tooltip>
                               </TooltipProvider>
                             )}
-                          </div>
-                        );
-                      })()}
+                          </>
+                        )}
+                      </div>
                     </TableCell>
-                    {/* CREATED AT */}
-                    <TableCell>
+
+                    {/* 6. CREATED AT */}
+                    <TableCell className="whitespace-nowrap">
                       <div className="text-sm text-slate-700">
                         {new Date(bucket.createdAt).toLocaleDateString(
                           "en-IN",
@@ -680,8 +693,9 @@ export default function BucketListingPage() {
                         )}
                       </div>
                     </TableCell>
-                    {/* 1. DISTRIBUTION STATUS */}
-                    <TableCell>
+
+                    {/* 7. DISTRIBUTION STATUS */}
+                    <TableCell className="whitespace-nowrap">
                       {(() => {
                         const distStatus =
                           bucket.distributionStatus || "Pending";
@@ -725,8 +739,9 @@ export default function BucketListingPage() {
                         );
                       })()}
                     </TableCell>
-                    {/* 2. TASK STATUS (Derived from generatedTasks) */}
-                    <TableCell>
+
+                    {/* 8. TASK STATUS (Derived from generatedTasks) */}
+                    <TableCell className="whitespace-nowrap">
                       {(() => {
                         const tasks = Array.isArray(bucket.generatedTasks)
                           ? bucket.generatedTasks
@@ -772,8 +787,9 @@ export default function BucketListingPage() {
                         );
                       })()}
                     </TableCell>
-                    {/* 3. FINAL STATUS (Bucket Final Closure Status) */}
-                    <TableCell>
+
+                    {/* 9. FINAL STATUS (Bucket Final Closure Status) */}
+                    <TableCell className="whitespace-nowrap">
                       <span
                         className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${
                           bucket.status === "Completed"
@@ -791,11 +807,11 @@ export default function BucketListingPage() {
                         {bucket.status || "Pending"}
                       </span>
                     </TableCell>
-                    {(canUpdate || canDelete) && (
-                      <TableCell className="">
-                        <div className="flex items-center gap-2">
-                          {/* EDIT */}
 
+                    {/* 10. ACTION */}
+                    {(canUpdate || canDelete) && (
+                      <TableCell className="whitespace-nowrap">
+                        <div className="flex items-center gap-2">
                           {canUpdate && (
                             <button
                               onClick={() =>
@@ -808,8 +824,6 @@ export default function BucketListingPage() {
                               <Edit size={16} className="text-blue-600" />
                             </button>
                           )}
-
-                          {/* DELETE */}
 
                           {canDelete && (
                             <button

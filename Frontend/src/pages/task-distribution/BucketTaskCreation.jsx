@@ -133,6 +133,7 @@ const BucketCreation = () => {
   const [bucketUploadFile, setBucketUploadFile] = useState(null);
 
   const [bucketImportResult, setBucketImportResult] = useState(null);
+  const [downloadingTemplate, setDownloadingTemplate] = useState(false);
   const fetchMaster = async () => {
     try {
       const res = await api.get("/task-audience-masters");
@@ -531,7 +532,11 @@ const BucketCreation = () => {
     }
   };
   const handleDownloadBucketTemplate = async () => {
+    if (downloadingTemplate) return;
+
     try {
+      setDownloadingTemplate(true);
+
       const response = await api.get(
         "/task-buckets/downloadTemp?type=delegation",
         {
@@ -559,6 +564,8 @@ const BucketCreation = () => {
       window.URL.revokeObjectURL(url);
     } catch (error) {
       toast.error("Failed to download template");
+    } finally {
+      setDownloadingTemplate(false);
     }
   };
   const handleDownloadBucketErrorFile = async () => {
@@ -1175,9 +1182,9 @@ const BucketCreation = () => {
                   </li>
                   <li>
                     <code className="bg-gray-200 px-1 rounded">
-                      Assignment Mode
+                      Target Users
                     </code>{" "}
-                    (Role / Users)
+                    (Name or Email)
                   </li>
                   <li>
                     <code className="bg-gray-200 px-1 rounded">Start Date</code>
@@ -1191,38 +1198,38 @@ const BucketCreation = () => {
 
                 <div className="rounded-md border bg-blue-50 p-3 text-xs text-blue-700 space-y-1">
                   <p>
-                    • Assignment Mode must be <b>Role</b> or <b>Users</b>
+                    • <b>Target Users</b> is required and must match existing
+                    active users by exact full name or email address
                   </p>
-
                   <p>
-                    • If Assignment Mode is <b>Role</b>, then <b>Target Role</b>{" "}
-                    is required
+                    • For multiple users, separate names or emails with a comma
+                    (e.g. <b>Rahul Singh, Priya Verma</b>)
                   </p>
-
-                  <p>
-                    • If Assignment Mode is <b>Users</b>, then{" "}
-                    <b>Target User</b> is required
-                  </p>
-
-                  <p>• Target Role must match an existing role in the system</p>
-
-                  <p>
-                    • Target Users can be comma-separated names or email
-                    addresses
-                  </p>
-
                   <p>
                     • Date format: <b>DD-MM-YYYY</b>
+                  </p>
+                  <p>
+                    • Task End Days must be a positive number (<b>≥ 1</b>)
                   </p>
                 </div>
 
                 <Button
                   variant="outline"
                   onClick={handleDownloadBucketTemplate}
+                  disabled={downloadingTemplate}
                   className="w-full"
                 >
-                  <FileText className="mr-2 h-4 w-4" />
-                  Download Bucket Template
+                  {downloadingTemplate ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-slate-700 mr-2" />
+                      Downloading...
+                    </>
+                  ) : (
+                    <>
+                      <FileText className="mr-2 h-4 w-4" />
+                      Download Bucket Template
+                    </>
+                  )}
                 </Button>
               </div>
 
