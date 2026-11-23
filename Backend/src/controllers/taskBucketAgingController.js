@@ -98,7 +98,6 @@ export const getEmployeeWiseAgingBucketCounts = handleAsync(
         .select("_id name email employeeCode role")
         .lean(),
 
-      // Sirf woh buckets jo abhi tak distribute nahi hui hain aur > master days purani hain
       TaskBucket.find({
         isDeleted: { $ne: true },
         status: { $ne: "Completed" },
@@ -158,7 +157,17 @@ export const getEmployeeWiseAgingBucketCounts = handleAsync(
         }
       }
 
-      if (bucket.assignmentMode === "Role" && bucket.targetRole) {
+      // Sirf tabhi poora role add karein jab specific targetUsers na diye gaye hon
+      const hasSpecificUsers =
+        (Array.isArray(bucket.targetUsers) && bucket.targetUsers.length > 0) ||
+        (Array.isArray(bucket.assignedTargetUsers) &&
+          bucket.assignedTargetUsers.length > 0);
+
+      if (
+        bucket.assignmentMode === "Role" &&
+        bucket.targetRole &&
+        !hasSpecificUsers
+      ) {
         const roleId = String(bucket.targetRole._id || bucket.targetRole);
         const matchedRoleUsers = usersByRole.get(roleId) || [];
         for (const u of matchedRoleUsers) {
@@ -167,7 +176,6 @@ export const getEmployeeWiseAgingBucketCounts = handleAsync(
       }
     }
 
-    // Sirf wahi users bhejein jinka pendingCount > 0 hai
     const usersList = [];
     for (const [uid, bucketSet] of userBucketSets.entries()) {
       const u = userMap.get(uid);
@@ -235,6 +243,7 @@ export const getEmployeeAgingBucketList = handleAsync(
       userConditions.push({
         assignmentMode: "Role",
         targetRole: user.role._id || user.role,
+        "targetUsers.0": { $exists: false },
       });
     }
 
@@ -259,25 +268,32 @@ export const getEmployeeAgingBucketList = handleAsync(
       .sort({ createdAt: 1 })
       .lean();
 
-    const nowMoment = moment().tz("Asia/Kolkata");
+    const todayStartIST = moment().tz("Asia/Kolkata").startOf("day");
 
-    const formattedList = buckets.map((b) => ({
-      _id: b._id,
-      bucketId: b.bucketId,
-      title: b.title,
-      description: b.description,
-      status: b.status,
-      distributionStatus: b.distributionStatus,
-      startDate: b.startDate,
-      taskEndDays: b.taskEndDays,
-      isRecurrent: b.isRecurrent,
-      frequency: b.frequency,
-      createdAt: b.createdAt,
-      pendingSinceDays: nowMoment.diff(
-        moment(b.createdAt).tz("Asia/Kolkata"),
-        "days",
-      ),
-    }));
+    const formattedList = buckets.map((b) => {
+      const createdStartIST = moment(b.createdAt)
+        .tz("Asia/Kolkata")
+        .startOf("day");
+
+      const totalAgeDays = todayStartIST.diff(createdStartIST, "days");
+      const overdueDaysAfterMaster = Math.max(0, totalAgeDays - days);
+
+      return {
+        _id: b._id,
+        bucketId: b.bucketId,
+        title: b.title,
+        description: b.description,
+        status: b.status,
+        distributionStatus: b.distributionStatus,
+        startDate: b.startDate,
+        taskEndDays: b.taskEndDays,
+        isRecurrent: b.isRecurrent,
+        frequency: b.frequency,
+        createdAt: b.createdAt,
+        totalAgeDays,
+        pendingSinceDays: overdueDaysAfterMaster,
+      };
+    });
 
     return res.status(200).json({
       success: true,
