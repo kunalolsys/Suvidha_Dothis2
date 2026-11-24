@@ -72,6 +72,8 @@ import AdminExtensionMaster from "./components/AdminExtensionMaster";
 import AdminExtensionApprovals from "./components/AdminExtensionApprovals";
 import UserExtendTasksList from "./components/UserExtendTasksList";
 import TaskBucketAgingMaster from "./components/TaskBucketAgingMaster";
+import OpenFormBucketMaster from "./components/OpenFormBucketMaster";
+import RecurringTaskMonitor from "./pages/RecurringTaskMonitor";
 
 function App() {
   const [isSessionTimeoutModalOpen, setIsSessionTimeoutModalOpen] =
@@ -471,6 +473,28 @@ function App() {
                     >
                       <SuperModuleSettings />
                     </PermissionRoute>
+                  }
+                />
+                <Route
+                  path="/delegate/open-form-bucket-master"
+                  element={
+                    // <PermissionRoute
+                    //   isSuperOnly={true}
+                    //   requiredPermission="module_setting"
+                    // >
+                      <OpenFormBucketMaster />
+                    // </PermissionRoute>
+                  }
+                />
+                <Route
+                  path="/recurring-monitor"
+                  element={
+                    // <PermissionRoute
+                    //   isSuperOnly={true}
+                    //   requiredPermission="module_setting"
+                    // >
+                      <RecurringTaskMonitor />
+                    // </PermissionRoute>
                   }
                 />
               </Route>

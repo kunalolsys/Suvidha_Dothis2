@@ -130,7 +130,8 @@ export const getEmployeeWiseAgingBucketCounts = handleAsync(
     }
 
     const addBucketForUser = (userId, bucketId) => {
-      const uid = String(userId);
+      if (!userId) return;
+      const uid = String(userId._id || userId);
       if (!userMap.has(uid)) return;
       if (!userBucketSets.has(uid)) {
         userBucketSets.set(uid, new Set());
@@ -141,14 +142,21 @@ export const getEmployeeWiseAgingBucketCounts = handleAsync(
     for (const bucket of agingBuckets) {
       const bid = String(bucket._id);
 
-      const directUsers = [
-        ...(bucket.targetUsers || []),
-        ...(bucket.assignedTargetUsers || []),
-      ];
-      for (const uid of directUsers) {
-        addBucketForUser(uid, bid);
+      // 1. targetUsers match
+      if (Array.isArray(bucket.targetUsers)) {
+        for (const uid of bucket.targetUsers) {
+          addBucketForUser(uid, bid);
+        }
       }
 
+      // 2. assignedTargetUsers match
+      if (Array.isArray(bucket.assignedTargetUsers)) {
+        for (const uid of bucket.assignedTargetUsers) {
+          addBucketForUser(uid, bid);
+        }
+      }
+
+      // 3. targetUserDistribution match (status === "Pending")
       if (Array.isArray(bucket.targetUserDistribution)) {
         for (const dist of bucket.targetUserDistribution) {
           if (dist?.user && dist.status === "Pending") {
@@ -157,16 +165,14 @@ export const getEmployeeWiseAgingBucketCounts = handleAsync(
         }
       }
 
-      // Sirf tabhi poora role add karein jab specific targetUsers na diye gaye hon
-      const hasSpecificUsers =
-        (Array.isArray(bucket.targetUsers) && bucket.targetUsers.length > 0) ||
-        (Array.isArray(bucket.assignedTargetUsers) &&
-          bucket.assignedTargetUsers.length > 0);
+      // 4. Role match (Exact same condition as API 2: "targetUsers.0": { $exists: false })
+      const hasTargetUsers =
+        Array.isArray(bucket.targetUsers) && bucket.targetUsers.length > 0;
 
       if (
         bucket.assignmentMode === "Role" &&
         bucket.targetRole &&
-        !hasSpecificUsers
+        !hasTargetUsers
       ) {
         const roleId = String(bucket.targetRole._id || bucket.targetRole);
         const matchedRoleUsers = usersByRole.get(roleId) || [];

@@ -20,6 +20,7 @@ import taskBucketsReqRoutes from "./taskBucketReqRoutes.js";
 import decisionRoutes from "./decisionStepRoutes.js";
 import openFormImportRoutes from "./openFormImportRoutes.js";
 import taskExtensionRoutes from "./taskExtensionRoutes.js";
+import recurringMonitorRoutes from "./recurringMonitorRoutes.js";
 
 import { moduleGate } from "../middleware/moduleGate.js";
 import { generateRecurringTasks } from "../cron/assignRecurringTask.js";
@@ -33,6 +34,8 @@ router.use("/auth", authRoutes);
 router.use("/work-shifts", moduleGate, workShiftRoutes);
 
 router.use("/tasks", moduleGate, taskRoutes);
+
+router.use("/recurring-monitor", recurringMonitorRoutes);
 
 router.use("/users", userRoutes);
 

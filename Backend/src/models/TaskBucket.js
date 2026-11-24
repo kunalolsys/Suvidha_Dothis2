@@ -10,6 +10,19 @@ const TaskBucketSchema = new mongoose.Schema(
       unique: true,
       sparse: true,
     },
+    // TaskBucket.js (Schema ke andar)
+    source: {
+      type: String,
+      enum: ["Default", "OpenForm"],
+      default: "Default",
+      index: true,
+    },
+    // TaskBucket.js (Schema ke andar)
+    location: {
+      type: String,
+      trim: true,
+      default: null,
+    },
     title: {
       type: String,
       required: true,

@@ -391,6 +391,13 @@ const Sidebar = ({ children }) => {
         icon: Users,
       });
     }
+    if (isSuper) {
+      items.push({
+        path: "/delegate/open-form-bucket-master",
+        label: "Open Form Master",
+        icon: Shield,
+      });
+    }
     return items;
   }, [hasPermission]);
 
@@ -1261,6 +1268,42 @@ const Sidebar = ({ children }) => {
 
               {!isCollapsed && (
                 <span className="ml-2 font-medium text-sm">Module Setting</span>
+              )}
+            </Link>
+          )}
+          {isSuper && (
+            <Link
+              to="/recurring-monitor"
+              className={`
+                relative flex items-center ${
+                  isCollapsed ? "justify-center" : ""
+                } 
+                rounded-xl px-3 py-2.5 transition-all duration-300 group
+                backdrop-blur-sm border
+                ${
+                  isActiveLink("/recurring-monitor")
+                    ? "bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/25 border-blue-400"
+                    : "bg-white/80 text-gray-600 hover:bg-white border-gray-200/60 hover:border-gray-300/80 hover:shadow-lg"
+                }
+              `}
+            >
+              <div
+                className={`relative ${
+                  isActiveLink("/recurring-monitor")
+                    ? "text-white"
+                    : "text-gray-400 group-hover:text-blue-500"
+                }`}
+              >
+                <Settings className="w-4 h-4" />
+                {isActiveLink("/recurring-monitor") && (
+                  <div className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-green-400 rounded-full border border-white"></div>
+                )}
+              </div>
+
+              {!isCollapsed && (
+                <span className="ml-2 font-medium text-sm">
+                  Recurring Monitor
+                </span>
               )}
             </Link>
           )}

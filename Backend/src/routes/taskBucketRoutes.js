@@ -15,7 +15,7 @@ import {
   exportTaskBucketsFiltered,
 } from "../controllers/taskBucketController.js";
 
-import { authenticateJWT } from "../middleware/authMiddleware.js";
+import { authenticateJWT, authenticateOpenForm } from "../middleware/authMiddleware.js";
 import upload from "../middleware/upload.js";
 import {
   downloadBucketImportTemplate,
@@ -29,6 +29,7 @@ import {
   getTaskBucketAgingMaster,
   upsertTaskBucketAgingMaster,
 } from "../controllers/taskBucketAgingController.js";
+import { createBucketFromOpenForm, getOpenFormBucketMaster, upsertOpenFormBucketMaster } from "../controllers/openFormBucketController.js";
 
 const router = express.Router();
 
@@ -42,7 +43,12 @@ router.post(
   importTaskBuckets,
 );
 router.get("/downloadTemp", authenticateJWT, downloadBucketImportTemplate);
+// Admin Master Routes (Protected)
+router.get("/open-form/master", authenticateJWT, getOpenFormBucketMaster);
+router.post("/open-form/master", authenticateJWT, upsertOpenFormBucketMaster);
 
+// Open Form Submit Route (No auth required since it's an open form)
+router.post("/open-form/submit",authenticateOpenForm, createBucketFromOpenForm);
 router.get("/list", authenticateJWT, getAllTaskBuckets);
 router.get("/export-bucket", authenticateJWT, exportTaskBucketsFiltered);
 router.get("/bucket/export", authenticateJWT, exportTaskBuckets);
