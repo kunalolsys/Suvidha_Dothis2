@@ -6,7 +6,12 @@ import {
   CardTitle,
   Button,
 } from "../../components/ui/index.jsx";
-
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "../../components/ui/tooltip.jsx";
 import {
   Briefcase,
   CalendarDays,
@@ -41,7 +46,7 @@ import {
   InputNumber,
   Modal,
   Tag,
-  Tooltip,
+  Tooltip as AntdTooltip,
 } from "antd";
 import api from "../../lib/api.js";
 import dayjs from "dayjs";
@@ -744,20 +749,21 @@ const TaskDistribution = () => {
                   />
 
                   <div className="flex items-center gap-2 shrink-0">
-                    {activeTab === "Pending" && selectableBuckets.length > 0 && (
-                      <div className="flex items-center gap-2 px-3.5 h-9 bg-indigo-50/70 border border-indigo-100 rounded-xl">
-                        <Checkbox
-                          checked={isAllSelected}
-                          onChange={(e) =>
-                            handleSelectAllBuckets(e.target.checked)
-                          }
-                        >
-                          <span className="text-xs font-semibold text-indigo-800">
-                            Select All ({selectableBuckets.length})
-                          </span>
-                        </Checkbox>
-                      </div>
-                    )}
+                    {activeTab === "Pending" &&
+                      selectableBuckets.length > 0 && (
+                        <div className="flex items-center gap-2 px-3.5 h-9 bg-indigo-50/70 border border-indigo-100 rounded-xl">
+                          <Checkbox
+                            checked={isAllSelected}
+                            onChange={(e) =>
+                              handleSelectAllBuckets(e.target.checked)
+                            }
+                          >
+                            <span className="text-xs font-semibold text-indigo-800">
+                              Select All ({selectableBuckets.length})
+                            </span>
+                          </Checkbox>
+                        </div>
+                      )}
 
                     {/* EXPORT FILTER-WISE OR ALL DROPDOWN */}
                     <Dropdown
@@ -946,9 +952,24 @@ const TaskDistribution = () => {
                                       {bucket.bucketId}
                                     </span>
                                   )}
-                                  <h3 className="font-bold text-slate-800 text-sm truncate group-hover:text-indigo-700 transition-colors">
-                                    {bucket.title}
-                                  </h3>
+                                  {bucket?.title ? (
+                                    <TooltipProvider>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <h3 className="font-bold text-slate-800 text-sm truncate group-hover:text-indigo-700 transition-colors cursor-default">
+                                            {bucket.title}
+                                          </h3>
+                                        </TooltipTrigger>
+                                        <TooltipContent className="max-w-xs break-words whitespace-pre-wrap">
+                                          <p>{bucket.title}</p>
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    </TooltipProvider>
+                                  ) : (
+                                    <h3 className="font-bold text-slate-400 text-sm">
+                                      -
+                                    </h3>
+                                  )}
 
                                   {/* {distributed && !isClosed && (
                                     <Tag
@@ -1135,7 +1156,7 @@ const TaskDistribution = () => {
                             </div>
 
                             {/* INLINE EDITABLE taskEndDays BOX */}
-                            <Tooltip
+                            <AntdTooltip
                               title={
                                 isClosed || distributed
                                   ? "Locked after distribution"
@@ -1175,7 +1196,7 @@ const TaskDistribution = () => {
                                   className="w-20 font-bold"
                                 />
                               </div>
-                            </Tooltip>
+                            </AntdTooltip>
                           </div>
                         </div>
                       );
@@ -1340,12 +1361,39 @@ const TaskDistribution = () => {
                             className="flex items-center justify-between bg-white px-3 py-2.5 rounded-xl border border-slate-200/90 text-xs shadow-2xs"
                           >
                             <div className="min-w-0 pr-2">
-                              <span className="font-semibold text-slate-800 block truncate">
-                                {bucket.title}
-                              </span>
-                              <span className="text-[11px] text-slate-500 block truncate">
-                                {description}
-                              </span>
+                              {bucket?.title ? (
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <span className="font-semibold text-slate-800 block truncate cursor-default">
+                                        {bucket.title}
+                                      </span>
+                                    </TooltipTrigger>
+                                    <TooltipContent className="max-w-xs break-words whitespace-pre-wrap">
+                                      <p>{bucket.title}</p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              ) : (
+                                <span className="font-semibold text-slate-400 block">
+                                  -
+                                </span>
+                              )}
+
+                              {description ? (
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <span className="text-[11px] text-slate-500 block truncate cursor-default">
+                                        {description}
+                                      </span>
+                                    </TooltipTrigger>
+                                    <TooltipContent className="max-w-sm break-words whitespace-pre-wrap">
+                                      <p>{description}</p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              ) : null}
                             </div>
 
                             <div className="flex items-center gap-2 shrink-0">
