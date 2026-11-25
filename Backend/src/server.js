@@ -17,6 +17,7 @@ import ModuleSetting from "./models/ModuleSetting.js";
 import "./services/telegram/telegramBOT.js";
 import startAnnualHolidayCron from "./seeders/seedAnnualHolidays.js";
 import { initTelegramCronJobs } from "./cron/telegramMorningCron.js";
+import { startRecurringAuditAlertCron } from "./cron/recurringAuditAlertCron.js";
 
 dotenv.config();
 
@@ -61,6 +62,7 @@ mongoose
         startTaskStatusCron();
         runDependencyCron();
         initTelegramCronJobs()
+        startRecurringAuditAlertCron()
         // startAnnualHolidayCron();
         if (isDoThisEnabled) {
           startCronJobs();

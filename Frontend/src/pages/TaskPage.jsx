@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import api from "../lib/api";
 import { fetchTasks } from "../redux/slices/task/taskSlice";
@@ -42,13 +42,20 @@ const TaskPage = () => {
 
   const tasksLoading = status === "loading";
 
+  // Keep track of the latest active tab, page, limit, and filters used by TaskTable
+  const latestTaskParamsRef = useRef({
+    page: 1,
+    limit: 10,
+    type: "DelegationTask",
+  });
+
   // Separate API call specifically for DelegationTask parent dropdown in CreateTaskForm
   const loadDelegationTasks = useCallback(async () => {
     try {
       const queryParams = new URLSearchParams({
         type: "DelegationTask",
         page: 1,
-        limit: 100000000000000,
+        limit: "all",
       });
       const res = await api.get(`/tasks?${queryParams.toString()}`);
       setDelegationTasks(res?.data?.data || []);
@@ -90,14 +97,29 @@ const TaskPage = () => {
     };
   }, [dispatch, loadDelegationTasks]);
 
-  const handleRefreshTasks = (params = {}) => {
-    dispatch(fetchTasks(params));
-  };
+  const handleRefreshTasks = useCallback(
+    (params) => {
+      const queryToRun = params
+        ? { ...latestTaskParamsRef.current, ...params }
+        : latestTaskParamsRef.current;
 
-  const handleTaskCreated = () => {
-    handleRefreshTasks();
-    loadDelegationTasks();
-  };
+      latestTaskParamsRef.current = queryToRun;
+      dispatch(fetchTasks(queryToRun));
+    },
+    [dispatch],
+  );
+
+  const handleTaskCreated = useCallback(
+    (createdTask) => {
+      const nextParams = { page: 1 };
+      if (createdTask?.taskType) {
+        nextParams.type = createdTask.taskType;
+      }
+      handleRefreshTasks(nextParams);
+      loadDelegationTasks();
+    },
+    [handleRefreshTasks, loadDelegationTasks],
+  );
 
   const handleViewDescription = (description) => {
     setFullDescription(description || "No description provided.");

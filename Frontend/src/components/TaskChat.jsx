@@ -13,6 +13,12 @@ import {
   Popover,
 } from "antd";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "../components/ui/tooltip.jsx";
+import {
   Send,
   Clock,
   CheckCircle2,
@@ -422,11 +428,27 @@ const TaskChat = ({ task, open, onClose, setRefreshTaskAfterReopen }) => {
                 {task?.assignedBy?.name?.[0]?.toUpperCase()}
               </Avatar> */}
 
-              <div>
-                <h2 className="font-bold text-xl flex items-center gap-2">
-                  {safeTask?.title}
-                </h2>
-
+              <div className="w-full min-w-0">
+                {safeTask?.title ? (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <h2 className="font-bold text-xl truncate block w-full pr-2 cursor-default">
+                          {safeTask.title}
+                        </h2>
+                      </TooltipTrigger>
+                      <TooltipContent
+                        side="bottom"
+                        align="start"
+                        className="max-w-xs break-words whitespace-pre-wrap z-[60]"
+                      >
+                        <p>{safeTask.title}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                ) : (
+                  <h2 className="font-bold text-xl text-gray-400">-</h2>
+                )}
                 <div className="flex items-center gap-2 mt-1">
                   {/* Task ID */}
                   <span className="px-2 py-[2px] text-[11px] rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100">

@@ -973,12 +973,20 @@ const TodayTasksTable = ({
                     <TableCell className="font-medium">
                       <div className="flex flex-col gap-1">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span
-                            className="truncate max-w-[200px] inline-block"
-                            title={task?.title || "-"}
-                          >
-                            {task?.title || "-"}
-                          </span>
+                          {task?.title ? (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="truncate max-w-[200px] inline-block cursor-default">
+                                  {task.title}
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent className="max-w-xs break-words whitespace-pre-wrap">
+                                <p>{task.title}</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          ) : (
+                            <span className="text-gray-400 text-sm">-</span>
+                          )}
 
                           {task?.isReopen && (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-yellow-100 text-yellow-800 border border-yellow-300">

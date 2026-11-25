@@ -207,12 +207,14 @@ const TaskTable = ({
   const [itemsPerPage, setItemsPerPage] = useState(10);
 
   const debouncedSearch = useDebounce(searchTerm, 400);
-
-  // Trigger Backend Fetch whenever Filters / Pagination change[cite: 1]
-  useEffect(() => {
+  // 1. Add this helper inside TaskTable (right below your useEffect)
+  const triggerRefresh = (
+    overridePage = currentPage,
+    overrideLimit = itemsPerPage,
+  ) => {
     onRefreshTasks({
-      page: currentPage,
-      limit: itemsPerPage,
+      page: overridePage,
+      limit: overrideLimit,
       search: debouncedSearch,
       userId: selectedFilterUser,
       status: selectedFilterStatus,
@@ -220,6 +222,10 @@ const TaskTable = ({
       type:
         activeTabForExport === "one-time" ? "DelegationTask" : "RecurringTask",
     });
+  };
+  // Trigger Backend Fetch whenever Filters / Pagination change[cite: 1]
+  useEffect(() => {
+    triggerRefresh();
   }, [
     debouncedSearch,
     selectedFilterUser,
@@ -582,7 +588,7 @@ const TaskTable = ({
         setIsEditOpen(false);
         setActiveTab("basic");
         setEditFileList([]);
-        onRefreshTasks({ page: currentPage, limit: itemsPerPage });
+        triggerRefresh();
       }
     } catch (err) {
       toast.error(err.response?.data?.message || "Failed to update task");
@@ -625,7 +631,7 @@ const TaskTable = ({
               `Task and ${res.data.deletedCount - 1} dependent task(s) deleted successfully`,
           );
           setIsDeleteOpen(false);
-          onRefreshTasks({ page: currentPage, limit: itemsPerPage });
+          triggerRefresh();
         }
       } else {
         const res = await api.delete(
@@ -634,7 +640,7 @@ const TaskTable = ({
         if (res.data?.success) {
           toast.success("Task deleted successfully");
           setIsDeleteOpen(false);
-          onRefreshTasks({ page: currentPage, limit: itemsPerPage });
+          triggerRefresh();
         }
       }
     } catch (err) {
@@ -652,7 +658,7 @@ const TaskTable = ({
         toast.success(
           newStatus ? "Task marked as Completed" : "Task marked as Incomplete",
         );
-        onRefreshTasks({ page: currentPage, limit: itemsPerPage });
+        triggerRefresh();
       }
     } catch (err) {
       toast.error(err.response?.data?.message || "Failed to update status");
@@ -692,7 +698,7 @@ const TaskTable = ({
         toast.success(res.data.message || "Task reassigned successfully");
         setIsReassignOpen(false);
         setReassignTask(null);
-        onRefreshTasks({ page: currentPage, limit: itemsPerPage });
+        triggerRefresh();
       }
     } catch (err) {
       toast.error(err.response?.data?.message || "Failed to reassign task");
@@ -965,12 +971,12 @@ const TaskTable = ({
         );
       } else if (failedLogs.length > 0) {
         toast.warning(data.message);
-        onRefreshTasks({ page: currentPage, limit: itemsPerPage });
+        triggerRefresh();
       } else {
         toast.success(data.message);
         setImportError(null);
         setErrorFileUrl(null);
-        onRefreshTasks({ page: currentPage, limit: itemsPerPage });
+        triggerRefresh();
       }
 
       if (data.errorFile) {
@@ -1252,7 +1258,7 @@ const TaskTable = ({
           }
           toast.success("Selected tasks deleted successfully");
           setSelectedOneTimeTaskIds([]);
-          onRefreshTasks({ page: currentPage, limit: itemsPerPage });
+          triggerRefresh();
         } catch (error) {
           toast.error(
             error.response?.data?.message || "Failed to delete tasks",
@@ -1299,7 +1305,7 @@ const TaskTable = ({
           }
           toast.success("Selected tasks deleted successfully");
           setSelectedRecurringTaskIds([]);
-          onRefreshTasks({ page: currentPage, limit: itemsPerPage });
+          triggerRefresh();
         } catch (error) {
           toast.error(
             error.response?.data?.message || "Failed to delete tasks",
@@ -1323,9 +1329,7 @@ const TaskTable = ({
             <Button
               variant="ghost"
               size="sm"
-              onClick={() =>
-                onRefreshTasks({ page: currentPage, limit: itemsPerPage })
-              }
+              onClick={() => triggerRefresh()}
               className="text-gray-500"
             >
               Refresh List
@@ -1652,11 +1656,23 @@ const TaskTable = ({
                                 ?.visible && (
                                 <TableCell
                                   className={`font-medium ${getColWidthClass("title")}`}
-                                  title={task.title}
                                 >
-                                  <span className="truncate max-w-[230px] inline-block align-middle">
-                                    {task.title}
-                                  </span>
+                                  {task.title ? (
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <span className="truncate max-w-[230px] inline-block align-middle cursor-default">
+                                          {task.title}
+                                        </span>
+                                      </TooltipTrigger>
+                                      <TooltipContent className="max-w-xs break-words whitespace-pre-wrap">
+                                        <p>{task.title}</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  ) : (
+                                    <span className="text-gray-400 text-sm">
+                                      -
+                                    </span>
+                                  )}
                                 </TableCell>
                               )}
                               {columns.find((c) => c.key === "description")
@@ -2128,11 +2144,23 @@ const TaskTable = ({
                                 ?.visible && (
                                 <TableCell
                                   className={`font-medium ${getRecurringColWidthClass("title")}`}
-                                  title={task.title}
                                 >
-                                  <span className="truncate max-w-[230px] inline-block align-middle">
-                                    {task.title}
-                                  </span>
+                                  {task.title ? (
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <span className="truncate max-w-[230px] inline-block align-middle cursor-default">
+                                          {task.title}
+                                        </span>
+                                      </TooltipTrigger>
+                                      <TooltipContent className="max-w-xs break-words whitespace-pre-wrap">
+                                        <p>{task.title}</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  ) : (
+                                    <span className="text-gray-400 text-sm">
+                                      -
+                                    </span>
+                                  )}
                                 </TableCell>
                               )}
                               {recurringColumns.find(
@@ -2550,21 +2578,26 @@ const TaskTable = ({
                   </div>
                   <div className="space-y-2">
                     <Label>Assign To</Label>
-                    <Select
-                      value={editAssignedTo}
-                      onValueChange={setEditAssignedTo}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select User" items={users} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {users.map((user) => (
-                          <SelectItem key={user._id} value={user._id}>
-                            {user.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <AntdSelect
+                      showSearch
+                      value={editAssignedTo || undefined}
+                      onChange={(val) => setEditAssignedTo(val)}
+                      placeholder="Select User"
+                      style={{ width: "100%", height: "40px" }}
+                      optionFilterProp="label"
+                      getPopupContainer={(triggerNode) =>
+                        triggerNode.parentNode
+                      }
+                      filterOption={(input, option) =>
+                        (option?.label ?? "")
+                          .toLowerCase()
+                          .includes(input.toLowerCase())
+                      }
+                      options={users.map((user) => ({
+                        value: user._id,
+                        label: user.name,
+                      }))}
+                    />
                   </div>
                 </div>
 

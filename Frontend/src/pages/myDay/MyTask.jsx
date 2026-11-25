@@ -1034,12 +1034,20 @@ const TodayTasksTable = ({
                       <div className="flex flex-col gap-1">
                         {/* TITLE + BADGE */}
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span
-                            className="truncate max-w-[230px] inline-block"
-                            title={task.title}
-                          >
-                            {task.title}
-                          </span>
+                          {task.title ? (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="truncate max-w-[230px] inline-block cursor-default">
+                                  {task.title}
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent className="max-w-xs break-words whitespace-pre-wrap">
+                                <p>{task.title}</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          ) : (
+                            <span className="text-gray-400 text-sm">-</span>
+                          )}
                           {task.isReopen && (
                             <span
                               className="

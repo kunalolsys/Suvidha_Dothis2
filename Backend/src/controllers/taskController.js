@@ -2014,6 +2014,7 @@ export const exportMYTasks = handleAsync(async (req, res) => {
       $or: [
         { title: { $regex: escapedSearch, $options: "i" } },
         { TaskId: { $regex: escapedSearch, $options: "i" } },
+        { description: { $regex: escapedSearch, $options: "i" } },
       ],
     });
   }
@@ -3151,6 +3152,7 @@ export const getRoleBasedTasks = handleAsync(async (req, res) => {
         $or: [
           { title: { $regex: escapedSearch, $options: "i" } },
           { TaskId: { $regex: escapedSearch, $options: "i" } },
+          { description: { $regex: escapedSearch, $options: "i" } },
         ],
       });
     }
@@ -3588,6 +3590,7 @@ export const exportRoleBasedTasks = handleAsync(async (req, res) => {
         $or: [
           { title: { $regex: escapedSearch, $options: "i" } },
           { TaskId: { $regex: escapedSearch, $options: "i" } },
+          { description: { $regex: escapedSearch, $options: "i" } },
         ],
       });
     }
@@ -5542,6 +5545,25 @@ const applyTaskEndTime = (date, taskEndTime) => {
 // =========================================================
 // ✅ UPDATE TASK CONTROLLER
 // =========================================================
+const FREQUENCY_ENUM_MAP = {
+  daily: "Daily",
+  weekly: "Weekly",
+  "bi-weekly": "Bi-weekly",
+  biweekly: "Bi-weekly",
+  fortnightly: "Fortnightly",
+  monthly: "Monthly",
+  quarterly: "Quarterly",
+  "half-yearly": "Half Yearly",
+  "half yearly": "Half Yearly",
+  halfyearly: "Half Yearly",
+  yearly: "Yearly",
+};
+
+const normalizeFrequency = (val) => {
+  const cleaned = cleanField(val);
+  if (!cleaned) return cleaned;
+  return FREQUENCY_ENUM_MAP[cleaned.toLowerCase()] || cleaned;
+};
 export const updateTask = handleAsync(async (req, res, next) => {
   const { id } = req.params;
 
@@ -5836,7 +5858,9 @@ export const updateTask = handleAsync(async (req, res, next) => {
 
   // Recurring Tasks Logic
   if (task.taskType === "RecurringTask") {
-    if (frequency !== undefined) task.frequency = cleanField(frequency);
+    if (frequency !== undefined) {
+      task.frequency = normalizeFrequency(frequency);
+    }
     if (endDate !== undefined) {
       const cleanedEndDate = cleanField(endDate);
       task.endDate = cleanedEndDate ? parseDateIST(cleanedEndDate) : null;
