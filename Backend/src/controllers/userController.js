@@ -37,19 +37,52 @@ export const getAllUsers = handleAsync(async (req, res, next) => {
     page = 1,
     limit = 10,
     active,
+    status = "all", // "all" | "active" | "inactive" | "deleted"
     managerId,
     role,
     department,
     assignShift,
     search,
-    sortBy = "name", // default: "name" (ya "createdAt" rakh sakte hain)
-    sortOrder = "asc", // "asc" | "desc"
+    sortBy = "name",
+    sortOrder = "asc",
   } = req.body;
 
-  const filter = { isDeleted: { $ne: true } };
+  // ✅ Logged-in user fetch & role check
+  const userId = req.cookies?.userId || req.user?._id || null;
+  const loggedInUser = userId
+    ? await User.findById(userId).populate("role", "name displayName").lean()
+    : null;
 
-  if (active === true || active === "true") {
+  const loggedInRoleName = String(loggedInUser?.role?.name || "").toLowerCase();
+
+  const isAdminOrSuper =
+    loggedInUser?.isSuper === true ||
+    loggedInRoleName === "admin" ||
+    loggedInRoleName === "super";
+
+  const filter = {};
+
+  if (!isAdminOrSuper) {
+    // 🔒 Non-Admin users ko sirf Active aur Non-Deleted users hi dikhenge
+    filter.isDeleted = { $ne: true };
     filter.isActive = true;
+  } else {
+    // 🔓 Admin / Super Admin ke liye status filter chalega
+    if (status === "deleted") {
+      filter.isDeleted = true;
+    } else if (status === "active") {
+      filter.isDeleted = { $ne: true };
+      filter.isActive = true;
+    } else if (status === "inactive") {
+      filter.isDeleted = { $ne: true };
+      filter.isActive = false;
+    } else if (active === true || active === "true") {
+      filter.isDeleted = { $ne: true };
+      filter.isActive = true;
+    } else if (active === false || active === "false") {
+      filter.isDeleted = { $ne: true };
+      filter.isActive = false;
+    }
   }
 
   if (managerId) {
@@ -91,13 +124,12 @@ export const getAllUsers = handleAsync(async (req, res, next) => {
     currentSkip = 0;
   }
 
-  // ✅ Allowed sort fields & direction
   const allowedSortFields = ["name", "email", "employeeCode", "createdAt"];
   const sortField = allowedSortFields.includes(sortBy) ? sortBy : "name";
   const sortDirection = String(sortOrder).toLowerCase() === "desc" ? -1 : 1;
 
   const users = await User.find(filter, "-password")
-    .collation({ locale: "en", strength: 2 }) // Case-insensitive A-Z / Z-A sorting
+    .collation({ locale: "en", strength: 2 })
     .populate("department", "name")
     .populate("reportingManager", "name")
     .populate("role", "name displayName")

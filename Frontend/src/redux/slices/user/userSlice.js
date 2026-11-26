@@ -13,6 +13,7 @@ export const fetchUsers = createAsyncThunk(
         selectedDepartment = [],
         selectedShift = "",
         debouncedSearch = "",
+        selectedStatus = "all", 
         sortBy = "name",
         sortOrder = "asc",
       } = params;
@@ -30,6 +31,7 @@ export const fetchUsers = createAsyncThunk(
         assignShift:
           selectedShift == "all" ? undefined : selectedShift || undefined,
         search: debouncedSearch || undefined,
+        status: selectedStatus || "all", // ✅ "all" | "active" | "inactive" | "deleted"
         sortBy,
         sortOrder,
       };

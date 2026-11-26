@@ -127,7 +127,10 @@ export const getRecurringAuditReport = async (req, res) => {
     const recurringTasks = await RecurringTask.find({
       isDeleted: { $ne: true },
     })
-      .populate("assignedTo", "name email employeeCode isDeleted assignShift")
+      .populate(
+        "assignedTo",
+        "name email employeeCode isDeleted isActive status assignShift",
+      )
       .populate("departmentOfAssignToUser", "name")
       .lean();
 
@@ -139,6 +142,19 @@ export const getRecurringAuditReport = async (req, res) => {
       // 1. Check karein kya ye task is din banna chahiye tha
       if (!isTaskDueOnDate(task, queryDate)) continue;
 
+      const assignedUser = task.assignedTo;
+
+      // 2. Agar assigned user missing, deleted, ya inactive hai toh skip karein
+      const isUserInactive =
+        !assignedUser ||
+        assignedUser.isDeleted === true ||
+        assignedUser.isActive === false ||
+        String(assignedUser.status || "").toLowerCase() === "inactive";
+
+      if (isUserInactive) {
+        continue;
+      }
+
       totalDueCount++;
 
       const instanceKey = `${task._id}_${dateStr}`;
@@ -146,14 +162,14 @@ export const getRecurringAuditReport = async (req, res) => {
         .select("TaskId status isDeleted")
         .lean();
 
-      // 2. Agar task successfully ban chuka hai (aur deleted nahi hai), toh ise list mein mat bhejo
+      // 3. Agar task successfully ban chuka hai (aur deleted nahi hai), toh ise list mein mat bhejo
       if (existingInstance && !existingInstance.isDeleted) {
         generatedCount++;
         continue;
       }
 
-      // 3. Yahan sirf wahi tasks aayenge jo NAHI bane hain
-      let statusType = "NOT_GENERATED"; // "NOT_GENERATED" (Cron miss) | "SKIPPED" (Rule/Holiday/Inactive)
+      // 4. Yahan sirf wahi tasks aayenge jo NAHI bane hain
+      let statusType = "NOT_GENERATED"; // "NOT_GENERATED" (Cron miss) | "SKIPPED" (Rule/Holiday)
       let reasonMessage =
         "Task was due but has not been generated yet (cron missed or pending).";
       let canRetry = true;
@@ -162,77 +178,61 @@ export const getRecurringAuditReport = async (req, res) => {
         statusType = "SKIPPED";
         reasonMessage = `Instance (${existingInstance.TaskId}) was already created and has been soft-deleted.`;
         canRetry = false;
+      } else if (!assignedUser.assignShift) {
+        statusType = "SKIPPED";
+        reasonMessage = `User (${assignedUser.name}) has no work shift assigned.`;
+        canRetry = false;
       } else {
-        const assignedUser = task.assignedTo;
+        const userWithShift = await User.findById(assignedUser._id)
+          .populate("assignShift")
+          .lean();
+        const workShift = userWithShift?.assignShift;
+        const taskDeptId =
+          task.departmentOfAssignToUser?._id || assignedUser._id;
 
-        if (!assignedUser) {
-          statusType = "SKIPPED";
-          reasonMessage = "Assigned user ID missing hai.";
-          canRetry = false;
-        } else if (assignedUser.isDeleted) {
-          statusType = "SKIPPED";
-          reasonMessage = `Assigned user (${assignedUser.name}) has been deleted or is inactive.`;
-          canRetry = false;
-        } else if (!assignedUser.assignShift) {
-          statusType = "SKIPPED";
-          reasonMessage = `User (${assignedUser.name}) has no work shift assigned.`;
-          canRetry = false;
-        } else {
-          const userWithShift = await User.findById(assignedUser._id)
-            .populate("assignShift")
-            .lean();
-          const workShift = userWithShift?.assignShift;
-          const taskDeptId =
-            task.departmentOfAssignToUser?._id || assignedUser._id;
+        let shiftStart = await nextWorkingShiftDate(
+          baseDateObj,
+          workShift._id,
+          {},
+          taskDeptId,
+        );
 
-          let shiftStart = await nextWorkingShiftDate(
-            baseDateObj,
-            workShift._id,
-            {},
-            taskDeptId,
-          );
-
-          const calcStr = moment(shiftStart)
+        const calcStr = moment(shiftStart)
+          .tz("Asia/Kolkata")
+          .format("YYYY-MM-DD");
+        if (calcStr !== dateStr) {
+          const timePart = moment(shiftStart)
             .tz("Asia/Kolkata")
-            .format("YYYY-MM-DD");
-          if (calcStr !== dateStr) {
-            const timePart = moment(shiftStart)
-              .tz("Asia/Kolkata")
-              .format("HH:mm:ss");
-            shiftStart = moment
-              .tz(
-                `${dateStr} ${timePart}`,
-                "YYYY-MM-DD HH:mm:ss",
-                "Asia/Kolkata",
-              )
-              .toDate();
-          }
+            .format("HH:mm:ss");
+          shiftStart = moment
+            .tz(`${dateStr} ${timePart}`, "YYYY-MM-DD HH:mm:ss", "Asia/Kolkata")
+            .toDate();
+        }
 
-          const endDateCheck = task.endDate
-            ? moment(task.endDate).tz("Asia/Kolkata").endOf("day").toDate()
-            : null;
+        const endDateCheck = task.endDate
+          ? moment(task.endDate).tz("Asia/Kolkata").endOf("day").toDate()
+          : null;
 
-          const holidayFlag = await isHoliday(shiftStart, taskDeptId);
-          const workingFlag = await isWorkingDay(
-            shiftStart,
-            workShift,
-            taskDeptId,
-          );
+        const holidayFlag = await isHoliday(shiftStart, taskDeptId);
+        const workingFlag = await isWorkingDay(
+          shiftStart,
+          workShift,
+          taskDeptId,
+        );
 
-          if (endDateCheck && shiftStart > endDateCheck) {
-            statusType = "SKIPPED";
-            reasonMessage =
-              "Calculated shift start time exceeds the task's end date.";
-            canRetry = false;
-          } else if (holidayFlag) {
-            statusType = "SKIPPED";
-            reasonMessage = `${dateStr} is declared as a holiday.`;
-            canRetry = false;
-          } else if (!workingFlag) {
-            statusType = "SKIPPED";
-            reasonMessage = `${dayName} (${dateStr}) is a non-working day / week-off for the user or department.`;
-            canRetry = false;
-          }
+        if (endDateCheck && shiftStart > endDateCheck) {
+          statusType = "SKIPPED";
+          reasonMessage =
+            "Calculated shift start time exceeds the task's end date.";
+          canRetry = false;
+        } else if (holidayFlag) {
+          statusType = "SKIPPED";
+          reasonMessage = `${dateStr} is declared as a holiday.`;
+          canRetry = false;
+        } else if (!workingFlag) {
+          statusType = "SKIPPED";
+          reasonMessage = `${dayName} (${dateStr}) is a non-working day / week-off for the user or department.`;
+          canRetry = false;
         }
       }
 
@@ -243,12 +243,10 @@ export const getRecurringAuditReport = async (req, res) => {
         frequency: task.frequency,
         expectedDate: dateStr,
         expectedDay: dayName,
-        assignedTo: task.assignedTo
-          ? {
-              name: task.assignedTo.name,
-              employeeCode: task.assignedTo.employeeCode,
-            }
-          : null,
+        assignedTo: {
+          name: assignedUser.name,
+          employeeCode: assignedUser.employeeCode,
+        },
         department: task.departmentOfAssignToUser?.name || "-",
         statusType,
         reasonMessage,

@@ -126,7 +126,10 @@ export const checkAndNotifyMissingRecurringTasks = async () => {
     const recurringTasks = await RecurringTask.find({
       isDeleted: { $ne: true },
     })
-      .populate("assignedTo", "name email employeeCode isDeleted assignShift")
+      .populate(
+        "assignedTo",
+        "name email employeeCode isDeleted isActive status assignShift",
+      )
       .populate("departmentOfAssignToUser", "name")
       .lean();
 
@@ -134,7 +137,18 @@ export const checkAndNotifyMissingRecurringTasks = async () => {
 
     for (const task of recurringTasks) {
       if (!isTaskDueOnDate(task, queryDate)) continue;
+      const assignedUser = task.assignedTo;
 
+      // ✅ Agar user missing, deleted, ya inactive hai toh skip karein (alert nahi bhejenge)
+      const isUserInactive =
+        !assignedUser ||
+        assignedUser.isDeleted === true ||
+        assignedUser.isActive === false ||
+        String(assignedUser.status || "").toLowerCase() === "inactive";
+
+      if (isUserInactive) {
+        continue;
+      }
       const instanceKey = `${task._id}_${dateStr}`;
       const existingInstance = await DelegationTask.findOne({ instanceKey })
         .select("TaskId status isDeleted")
@@ -313,9 +327,9 @@ export const startRecurringAuditAlertCron = () => {
 
   if (!isPrimaryWorker) return;
 
-  // "0 9 * * *" -> Roz subah 9:00 AM (Asia/Kolkata)
+  // "0 10 * * *" -> Roz subah 10:00 AM (Asia/Kolkata)
   cron.schedule(
-    "0 9 * * *",
+    "0 10 * * *",
     async () => {
       console.log("[Recurring Audit Cron] Running morning audit check...");
       await checkAndNotifyMissingRecurringTasks();
@@ -325,5 +339,5 @@ export const startRecurringAuditAlertCron = () => {
     },
   );
 
-  console.log("✅ Recurring Audit Alert Cron scheduled (09:00 AM IST daily)");
+  console.log("✅ Recurring Audit Alert Cron scheduled (10:00 AM IST daily)");
 };

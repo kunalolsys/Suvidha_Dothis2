@@ -107,7 +107,7 @@ const Users = () => {
   const debouncedSearch = useDebounce(searchTerm, 500);
   const [sortBy, setSortBy] = useState("name");
   const [sortOrder, setSortOrder] = useState("asc");
-
+  const [selectedStatus, setSelectedStatus] = useState("active");
   const handleNameSort = () => {
     setSortBy("name");
     setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
@@ -122,6 +122,7 @@ const Users = () => {
         selectedDepartment,
         selectedShift,
         debouncedSearch,
+        selectedStatus,
         sortBy,
         sortOrder,
       }),
@@ -137,6 +138,7 @@ const Users = () => {
     selectedDepartment,
     selectedShift,
     debouncedSearch,
+    selectedStatus,
     sortBy,
     sortOrder,
   ]);
@@ -172,7 +174,11 @@ const Users = () => {
   //   });
   // }, [users, searchTerm, selectedDepartment, selectedRole, selectedShift]);
   const { permissions, isSuper } = useSelector((state) => state.permissions);
-
+  const { currentUser } = useSelector((state) => state.users);
+  const isAdmin =
+    Boolean(isSuper) ||
+    String(currentUser?.role?.name || "").toLowerCase() === "admin" ||
+    String(currentUser?.role?.name || "").toLowerCase() === "super";
   // Destructure clean capability flags
   const { canCreate, canRead, canUpdate, canDelete } = getSubmodulePermissions(
     permissions,
@@ -572,6 +578,25 @@ const Users = () => {
               )}
             </SelectContent>
           </Select>
+          {isAdmin && (
+            <Select
+              onValueChange={(value) => {
+                setSelectedStatus(value);
+                setPage(1);
+              }}
+              value={selectedStatus}
+            >
+              <SelectTrigger className="w-full md:w-[180px]">
+                <SelectValue placeholder="All Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="inactive">Inactive</SelectItem>
+                <SelectItem value="deleted">Deleted</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
         </div>
 
         {/* --- Users Table --- */}
@@ -631,6 +656,7 @@ const Users = () => {
                 <TableHead>Shifts</TableHead>
                 <TableHead>Telegram Notification</TableHead>
                 <TableHead>Telegram Username</TableHead>
+                {isAdmin && <TableHead>Status</TableHead>}
                 {(canUpdate || canDelete) && (
                   <TableHead className="text-right">Actions</TableHead>
                 )}
@@ -674,6 +700,23 @@ const Users = () => {
                       </span>
                     </TableCell>{" "}
                     <TableCell>{user.telegramUserName || "-"}</TableCell>
+                    {isAdmin && (
+                      <TableCell>
+                        {user.isDeleted ? (
+                          <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold bg-red-100 text-red-700 border border-red-200">
+                            Deleted
+                          </span>
+                        ) : user.isActive === false ? (
+                          <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold bg-amber-100 text-amber-700 border border-amber-200">
+                            Inactive
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold bg-emerald-100 text-emerald-700 border border-emerald-200">
+                            Active
+                          </span>
+                        )}
+                      </TableCell>
+                    )}
                     {(canUpdate || canDelete) && (
                       <TableCell className="text-right">
                         {canUpdate && (
