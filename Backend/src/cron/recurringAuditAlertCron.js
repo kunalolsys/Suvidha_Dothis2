@@ -322,11 +322,6 @@ export const checkAndNotifyMissingRecurringTasks = async () => {
 
 // ── Schedule Cron: Har subah 9:00 AM IST ─────────────────────────────────────
 export const startRecurringAuditAlertCron = () => {
-  const isPrimaryWorker =
-    !process.env.NODE_APP_INSTANCE || process.env.NODE_APP_INSTANCE === "0";
-
-  if (!isPrimaryWorker) return;
-
   // "0 10 * * *" -> Roz subah 10:00 AM (Asia/Kolkata)
   cron.schedule(
     "0 10 * * *",

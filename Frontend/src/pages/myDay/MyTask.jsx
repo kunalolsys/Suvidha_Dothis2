@@ -1606,7 +1606,17 @@ const MyTask = () => {
     refreshUI,
     sortConfig,
   ]);
+  const formatDateDDMMYYYY = (dateValue) => {
+    if (!dateValue) return "-";
+    const d = new Date(dateValue);
+    if (isNaN(d.getTime())) return "-";
 
+    const day = String(d.getDate()).padStart(2, "0");
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const year = d.getFullYear();
+
+    return `${day}-${month}-${year}`; // Agar slash chahiye to `${day}/${month}/${year}` karein
+  };
   const handleExport = async () => {
     try {
       setIsExporting(true);
@@ -1656,15 +1666,9 @@ const MyTask = () => {
         Department: task?.departmentOfAssignToUser?.name || "-",
         Attachment: task?.attachmentFile?.length > 0 ? "Yes" : "No",
         "Checklist Count": task?.checklist?.length || 0,
-        "Start Date": task?.startDate
-          ? new Date(task.startDate).toLocaleDateString()
-          : "-",
-        "Due Date": task?.dueDate
-          ? new Date(task.dueDate).toLocaleDateString()
-          : "-",
-        "Completed At": task?.completedAt
-          ? new Date(task.completedAt).toLocaleDateString()
-          : "-",
+        "Start Date": formatDateDDMMYYYY(task?.startDate),
+        "Due Date": formatDateDDMMYYYY(task?.dueDate),
+        "Completed At": formatDateDDMMYYYY(task?.completedAt),
         Delay: task?.delay || "-",
         // "Created At": task?.createdAt
         //   ? new Date(task.createdAt).toLocaleString()
